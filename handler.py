@@ -30,6 +30,22 @@ def get_pipeline() -> DiffusionPipeline:
     if _pipe is not None:
         return _pipe
 
+    cache_dir = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface/hub"))
+    print(f"[debug] HF_HOME={cache_dir}", flush=True)
+    if os.path.isdir(cache_dir):
+        try:
+            entries = os.listdir(cache_dir)
+            print(f"[debug] Cache dir entries ({len(entries)}): {entries[:50]}", flush=True)
+            for e in entries:
+                p = os.path.join(cache_dir, e)
+                if os.path.isdir(p):
+                    sub = os.listdir(p)
+                    print(f"[debug]  {e}/ -> {sub[:20]}", flush=True)
+        except Exception as exc:
+            print(f"[debug] Failed to list cache dir: {exc}", flush=True)
+    else:
+        print("[debug] Cache dir does not exist", flush=True)
+
     print(f"[startup] Loading {MODEL_REPO} ...", flush=True)
     t0 = time.perf_counter()
 
