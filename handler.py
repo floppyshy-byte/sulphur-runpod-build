@@ -212,7 +212,14 @@ def handler(event):
 
     except Exception as exc:
         traceback.print_exc()
-        return {"error": str(exc), "traceback": traceback.format_exc()}
+        cache_dir = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface/hub"))
+        debug = {"hf_home": cache_dir, "cache_exists": os.path.isdir(cache_dir)}
+        if debug["cache_exists"]:
+            try:
+                debug["cache_entries"] = os.listdir(cache_dir)
+            except Exception as list_exc:
+                debug["cache_list_error"] = str(list_exc)
+        return {"error": str(exc), "traceback": traceback.format_exc(), "debug": debug}
 
 
 if __name__ == "__main__":
