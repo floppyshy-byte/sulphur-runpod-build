@@ -52,7 +52,6 @@ def get_pipeline() -> DiffusionPipeline:
     _pipe = DiffusionPipeline.from_pretrained(
         MODEL_REPO,
         torch_dtype=torch.bfloat16,
-        local_files_only=True,
     )
     _pipe = _pipe.to("cuda")
     _pipe.set_progress_bar_config(disable=True)

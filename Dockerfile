@@ -55,9 +55,7 @@ WORKDIR /app
 
 ENV PATH="/app/.venv/bin:/root/.local/bin:${PATH}"
 
-# Offline mode — model must be pre-cached via RunPod Model Cache
-ENV HF_HUB_OFFLINE=1
-ENV TRANSFORMERS_OFFLINE=1
+# Model cache dir — worker will download missing files on first run
 ENV HF_HOME=/runpod-volume/huggingface-cache/hub
 
 ENV PYTHONFAULTHANDLER=1
