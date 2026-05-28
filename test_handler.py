@@ -17,8 +17,8 @@ class TestHandlerSmoke(unittest.TestCase):
     def test_handler_contains_required_symbols(self):
         handler_path = Path(__file__).resolve().parent / "handler.py"
         source = handler_path.read_text()
-        for symbol in ("def handler", "def get_pipeline", "DiffusionPipeline",
-                       "t2v", "i2v", "MODEL_REPO"):
+        for symbol in ("def handler", "def get_pipeline",
+                       "t2v", "i2v", "load_pipeline"):
             self.assertIn(symbol, source,
                           f"handler.py must contain {symbol}")
 
@@ -26,7 +26,7 @@ class TestHandlerSmoke(unittest.TestCase):
         dockerfile = Path(__file__).resolve().parent / "Dockerfile"
         self.assertTrue(dockerfile.exists(), "Dockerfile missing")
         content = dockerfile.read_text()
-        self.assertIn("Civitai/Sulphur-2-distilled-fp8", content)
+        self.assertIn("Floppyshy/sulphur-2-runpod", content)
 
     def test_frame_validation(self):
         """num_frames must be 8n+1."""

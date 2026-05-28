@@ -1,7 +1,7 @@
 """
 Sulphur-2 RunPod serverless handler.
-Supports text-to-video (t2v) and image-to-video (i2v) via Diffusers pipeline.
-Model: Civitai/Sulphur-2-distilled-fp8
+Supports text-to-video (t2v) and image-to-video (i2v) via custom loader.
+Model: Civitai/Sulphur-2-distilled-fp8 + Gemma text encoder
 """
 from __future__ import annotations
 
@@ -11,17 +11,16 @@ import os
 import tempfile
 import time
 import traceback
-from pathlib import Path
 
 import runpod
 import torch
-from diffusers import DiffusionPipeline
+
+from loader import load_pipeline
 
 # ---------------------------------------------------------------------------
 # Model loading (lazy, cached globally)
 # ---------------------------------------------------------------------------
 
-MODEL_REPO = os.environ.get("SULPHUR_MODEL_REPO", "Civitai/Sulphur-2-distilled-fp8")
 _pipe = None
 
 
@@ -48,24 +47,6 @@ def _recursive_list_dir(path, prefix=""):
     return "\n".join(lines)
 
 
-def _find_safetensors(cache_dir: str) -> str | None:
-    """Find the first .safetensors file under cache_dir."""
-    for root, _dirs, files in os.walk(cache_dir):
-        for f in files:
-            if f.endswith(".safetensors"):
-                return os.path.join(root, f)
-    return None
-
-
-def _find_text_encoder_cache(cache_dir: str) -> str | None:
-    """Find a cached Gemma text encoder under cache_dir."""
-    for root, dirs, _files in os.walk(cache_dir):
-        for d in dirs:
-            if "gemma" in d.lower():
-                return os.path.join(root, d)
-    return None
-
-
 def get_pipeline():
     global _pipe
     if _pipe is not None:
@@ -78,53 +59,8 @@ def get_pipeline():
     listing = _recursive_list_dir(cache_dir)
     print(f"[debug] Cache listing:\n{listing}", flush=True)
 
-    # Find checkpoint
-    checkpoint_path = _find_safetensors(cache_dir)
-    if not checkpoint_path:
-        raise FileNotFoundError(f"No .safetensors found under {cache_dir}")
-
-    print(f"[startup] Found checkpoint: {checkpoint_path}", flush=True)
-
-    # Check for text encoder cache
-    te_cache = _find_text_encoder_cache(cache_dir)
-    if te_cache:
-        print(f"[startup] Found text encoder cache: {te_cache}", flush=True)
-    else:
-        print("[startup] No text encoder cache found", flush=True)
-
     t0 = time.perf_counter()
-
-    # Try LTX2Pipeline.from_single_file first
-    try:
-        from diffusers import LTX2Pipeline
-
-        print("[startup] Loading with LTX2Pipeline.from_single_file ...", flush=True)
-        _pipe = LTX2Pipeline.from_single_file(
-            checkpoint_path,
-            torch_dtype=torch.bfloat16,
-            local_files_only=True,
-        )
-        _pipe = _pipe.to("cuda")
-        print("[startup] LTX2Pipeline.from_single_file succeeded", flush=True)
-    except Exception as e1:
-        print(f"[startup] LTX2Pipeline.from_single_file failed: {e1}", flush=True)
-        # Fallback: DiffusionPipeline.from_single_file
-        try:
-            print("[startup] Loading with DiffusionPipeline.from_single_file ...", flush=True)
-            _pipe = DiffusionPipeline.from_single_file(
-                checkpoint_path,
-                torch_dtype=torch.bfloat16,
-                local_files_only=True,
-            )
-            _pipe = _pipe.to("cuda")
-            print("[startup] DiffusionPipeline.from_single_file succeeded", flush=True)
-        except Exception as e2:
-            print(f"[startup] DiffusionPipeline.from_single_file failed: {e2}", flush=True)
-            raise RuntimeError(
-                f"Failed to load checkpoint from {checkpoint_path}. "
-                f"LTX2Pipeline error: {e1}; DiffusionPipeline error: {e2}"
-            )
-
+    _pipe = load_pipeline(torch_dtype=torch.bfloat16, device="cuda")
     _pipe.set_progress_bar_config(disable=True)
     elapsed = time.perf_counter() - t0
     print(f"[startup] Pipeline loaded in {elapsed:.1f}s", flush=True)

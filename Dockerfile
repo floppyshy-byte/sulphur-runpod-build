@@ -1,10 +1,11 @@
 # =============================================================================
 # Sulphur-2 — RunPod Serverless Worker
 # =============================================================================
-# Uses Civitai/Sulphur-2-distilled-fp8 via Diffusers pipeline.
+# Uses Floppyshy/sulphur-2-runpod custom HF repo via custom loader.
+# Repo contains Sulphur-2 distilled checkpoint + Gemma text encoder.
 # Model is cached via RunPod's HF model cache, not baked into the image.
 # Add this HF repo ID when creating the endpoint:
-#   Civitai/Sulphur-2-distilled-fp8
+#   Floppyshy/sulphur-2-runpod
 # =============================================================================
 
 FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
@@ -64,5 +65,6 @@ ENV PYTHONFAULTHANDLER=1
 ENV CUDA_VISIBLE_DEVICES=0
 
 COPY handler.py /app/handler.py
+COPY loader.py /app/loader.py
 
 CMD ["python3", "-u", "/app/handler.py"]
