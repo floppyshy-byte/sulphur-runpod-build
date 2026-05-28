@@ -22,41 +22,110 @@ from diffusers import DiffusionPipeline
 # ---------------------------------------------------------------------------
 
 MODEL_REPO = os.environ.get("SULPHUR_MODEL_REPO", "Civitai/Sulphur-2-distilled-fp8")
-_pipe: DiffusionPipeline | None = None
+_pipe = None
 
 
-def get_pipeline() -> DiffusionPipeline:
+def _recursive_list_dir(path, prefix=""):
+    """Return a formatted recursive listing of a directory."""
+    lines = []
+    try:
+        entries = sorted(os.listdir(path))
+    except Exception as exc:
+        return f"{prefix}[error: {exc}]"
+    for e in entries:
+        p = os.path.join(path, e)
+        if os.path.isdir(p):
+            lines.append(f"{prefix}{e}/")
+            sub = _recursive_list_dir(p, prefix + "  ")
+            if sub:
+                lines.append(sub)
+        else:
+            try:
+                size = os.path.getsize(p)
+                lines.append(f"{prefix}{e}  ({size:,} bytes)")
+            except Exception:
+                lines.append(f"{prefix}{e}")
+    return "\n".join(lines)
+
+
+def _find_safetensors(cache_dir: str) -> str | None:
+    """Find the first .safetensors file under cache_dir."""
+    for root, _dirs, files in os.walk(cache_dir):
+        for f in files:
+            if f.endswith(".safetensors"):
+                return os.path.join(root, f)
+    return None
+
+
+def _find_text_encoder_cache(cache_dir: str) -> str | None:
+    """Find a cached Gemma text encoder under cache_dir."""
+    for root, dirs, _files in os.walk(cache_dir):
+        for d in dirs:
+            if "gemma" in d.lower():
+                return os.path.join(root, d)
+    return None
+
+
+def get_pipeline():
     global _pipe
     if _pipe is not None:
         return _pipe
 
     cache_dir = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface/hub"))
     print(f"[debug] HF_HOME={cache_dir}", flush=True)
-    if os.path.isdir(cache_dir):
-        try:
-            entries = os.listdir(cache_dir)
-            print(f"[debug] Cache dir entries ({len(entries)}): {entries[:50]}", flush=True)
-            for e in entries:
-                p = os.path.join(cache_dir, e)
-                if os.path.isdir(p):
-                    sub = os.listdir(p)
-                    print(f"[debug]  {e}/ -> {sub[:20]}", flush=True)
-        except Exception as exc:
-            print(f"[debug] Failed to list cache dir: {exc}", flush=True)
-    else:
-        print("[debug] Cache dir does not exist", flush=True)
 
-    print(f"[startup] Loading {MODEL_REPO} ...", flush=True)
+    # Deep recursive listing
+    listing = _recursive_list_dir(cache_dir)
+    print(f"[debug] Cache listing:\n{listing}", flush=True)
+
+    # Find checkpoint
+    checkpoint_path = _find_safetensors(cache_dir)
+    if not checkpoint_path:
+        raise FileNotFoundError(f"No .safetensors found under {cache_dir}")
+
+    print(f"[startup] Found checkpoint: {checkpoint_path}", flush=True)
+
+    # Check for text encoder cache
+    te_cache = _find_text_encoder_cache(cache_dir)
+    if te_cache:
+        print(f"[startup] Found text encoder cache: {te_cache}", flush=True)
+    else:
+        print("[startup] No text encoder cache found", flush=True)
+
     t0 = time.perf_counter()
 
-    _pipe = DiffusionPipeline.from_pretrained(
-        MODEL_REPO,
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-    )
-    _pipe = _pipe.to("cuda")
-    _pipe.set_progress_bar_config(disable=True)
+    # Try LTX2Pipeline.from_single_file first
+    try:
+        from diffusers import LTX2Pipeline
 
+        print("[startup] Loading with LTX2Pipeline.from_single_file ...", flush=True)
+        _pipe = LTX2Pipeline.from_single_file(
+            checkpoint_path,
+            torch_dtype=torch.bfloat16,
+            local_files_only=True,
+        )
+        _pipe = _pipe.to("cuda")
+        print("[startup] LTX2Pipeline.from_single_file succeeded", flush=True)
+    except Exception as e1:
+        print(f"[startup] LTX2Pipeline.from_single_file failed: {e1}", flush=True)
+        # Fallback: DiffusionPipeline.from_single_file
+        try:
+            print("[startup] Loading with DiffusionPipeline.from_single_file ...", flush=True)
+            _pipe = DiffusionPipeline.from_single_file(
+                checkpoint_path,
+                torch_dtype=torch.bfloat16,
+                local_files_only=True,
+            )
+            _pipe = _pipe.to("cuda")
+            print("[startup] DiffusionPipeline.from_single_file succeeded", flush=True)
+        except Exception as e2:
+            print(f"[startup] DiffusionPipeline.from_single_file failed: {e2}", flush=True)
+            raise RuntimeError(
+                f"Failed to load checkpoint from {checkpoint_path}. "
+                f"LTX2Pipeline error: {e1}; DiffusionPipeline error: {e2}"
+            )
+
+    _pipe.set_progress_bar_config(disable=True)
     elapsed = time.perf_counter() - t0
     print(f"[startup] Pipeline loaded in {elapsed:.1f}s", flush=True)
     return _pipe
@@ -159,9 +228,9 @@ def handler(event):
             b64_image = input_data.get("input_image_base64", "")
             if not b64_image:
                 return {"error": "input_image_base64 required for i2v"}
-            image_path = _decode_input(b64_image, ".png")
             from PIL import Image
 
+            image_path = _decode_input(b64_image, ".png")
             image = Image.open(image_path).convert("RGB")
             result = pipe(
                 prompt=prompt,
@@ -214,12 +283,11 @@ def handler(event):
     except Exception as exc:
         traceback.print_exc()
         cache_dir = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface/hub"))
-        debug = {"hf_home": cache_dir, "cache_exists": os.path.isdir(cache_dir)}
-        if debug["cache_exists"]:
-            try:
-                debug["cache_entries"] = os.listdir(cache_dir)
-            except Exception as list_exc:
-                debug["cache_list_error"] = str(list_exc)
+        debug = {
+            "hf_home": cache_dir,
+            "cache_exists": os.path.isdir(cache_dir),
+            "cache_listing": _recursive_list_dir(cache_dir) if os.path.isdir(cache_dir) else "N/A",
+        }
         return {"error": str(exc), "traceback": traceback.format_exc(), "debug": debug}
 
 

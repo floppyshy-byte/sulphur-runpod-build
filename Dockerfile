@@ -31,7 +31,7 @@ RUN uv pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu1
 
 # Install diffusers and media deps
 RUN uv pip install diffusers transformers accelerate \
-    imageio[ffmpeg] pillow safetensors
+    imageio[ffmpeg] pillow safetensors bitsandbytes
 
 # Install runpod
 RUN uv pip install runpod
