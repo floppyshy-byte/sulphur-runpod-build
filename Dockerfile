@@ -69,3 +69,4 @@ COPY handler.py /app/handler.py
 COPY loader.py /app/loader.py
 
 CMD ["python3", "-u", "/app/handler.py"]
+
