@@ -10,6 +10,40 @@ import os
 from pathlib import Path
 
 import torch
+import torch.nn as nn
+
+
+# ---------------------------------------------------------------------------
+# Fast init helper — skip random parameter init (saves minutes of CPU time)
+# ---------------------------------------------------------------------------
+
+_SKIP_INIT_CLASSES = (
+    nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d,
+    nn.ConvTranspose1d, nn.ConvTranspose2d, nn.ConvTranspose3d,
+    nn.Embedding, nn.LayerNorm, nn.GroupNorm, nn.BatchNorm1d,
+    nn.BatchNorm2d, nn.BatchNorm3d, nn.InstanceNorm1d,
+    nn.InstanceNorm2d, nn.InstanceNorm3d,
+)
+
+
+def _noop_reset(self):
+    pass
+
+
+class _FastInit:
+    """Context manager that disables parameter initialization for common layers."""
+
+    def __enter__(self):
+        self._originals = {}
+        for cls in _SKIP_INIT_CLASSES:
+            if hasattr(cls, "reset_parameters"):
+                self._originals[cls] = cls.reset_parameters
+                cls.reset_parameters = _noop_reset
+        return self
+
+    def __exit__(self, *args):
+        for cls, orig in self._originals.items():
+            cls.reset_parameters = orig
 
 # ---------------------------------------------------------------------------
 # Configs (inferred from Sulphur-2 / LTX-2.3 architecture)
@@ -361,30 +395,34 @@ def load_pipeline(
     torch.cuda.empty_cache()
 
     # Text connectors
-    print("[Sulphur] Building text connectors ...")
-    connectors = LTX2TextConnectors(
-        caption_channels=5376,
-        text_proj_in_factor=35,
-        video_connector_num_attention_heads=32,
-        video_connector_attention_head_dim=128,
-        video_connector_num_layers=8,
-        video_connector_num_learnable_registers=128,
-        video_gated_attn=True,
-        audio_connector_num_attention_heads=32,
-        audio_connector_attention_head_dim=64,
-        audio_connector_num_layers=8,
-        audio_connector_num_learnable_registers=128,
-        audio_gated_attn=True,
-        connector_rope_base_seq_len=4096,
-        rope_theta=10000.0,
-        rope_double_precision=True,
-        causal_temporal_positioning=False,
-        rope_type="split",
-        per_modality_projections=True,
-        video_hidden_dim=4096,
-        audio_hidden_dim=2048,
-        proj_bias=True,
-    ).to(dtype=torch_dtype)
+    print("[Sulphur] Building text connectors ...", flush=True)
+    old_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch_dtype)
+    with _FastInit():
+        connectors = LTX2TextConnectors(
+            caption_channels=5376,
+            text_proj_in_factor=35,
+            video_connector_num_attention_heads=32,
+            video_connector_attention_head_dim=128,
+            video_connector_num_layers=8,
+            video_connector_num_learnable_registers=128,
+            video_gated_attn=True,
+            audio_connector_num_attention_heads=32,
+            audio_connector_attention_head_dim=64,
+            audio_connector_num_layers=8,
+            audio_connector_num_learnable_registers=128,
+            audio_gated_attn=True,
+            connector_rope_base_seq_len=4096,
+            rope_theta=10000.0,
+            rope_double_precision=True,
+            causal_temporal_positioning=False,
+            rope_type="split",
+            per_modality_projections=True,
+            video_hidden_dim=4096,
+            audio_hidden_dim=2048,
+            proj_bias=True,
+        )
+    torch.set_default_dtype(old_dtype)
     raw = _open_prefix(
         str(checkpoint),
         "model.diffusion_model.video_embeddings_connector.",
@@ -419,50 +457,54 @@ def load_pipeline(
 
     # Transformer
     print("[Sulphur] Building transformer ...", flush=True)
-    transformer = LTX2VideoTransformer3DModel(
-        in_channels=128,
-        out_channels=128,
-        patch_size=1,
-        patch_size_t=1,
-        num_attention_heads=32,
-        attention_head_dim=128,
-        cross_attention_dim=4096,
-        vae_scale_factors=(8, 32, 32),
-        pos_embed_max_pos=20,
-        base_height=2048,
-        base_width=2048,
-        gated_attn=True,
-        cross_attn_mod=True,
-        audio_in_channels=128,
-        audio_out_channels=128,
-        audio_patch_size=1,
-        audio_patch_size_t=1,
-        audio_num_attention_heads=32,
-        audio_attention_head_dim=64,
-        audio_cross_attention_dim=2048,
-        audio_scale_factor=4,
-        audio_pos_embed_max_pos=20,
-        audio_sampling_rate=16000,
-        audio_hop_length=160,
-        audio_gated_attn=True,
-        audio_cross_attn_mod=True,
-        num_layers=48,
-        activation_fn="gelu-approximate",
-        qk_norm="rms_norm_across_heads",
-        norm_elementwise_affine=False,
-        norm_eps=1e-6,
-        caption_channels=5376,
-        attention_bias=True,
-        attention_out_bias=True,
-        rope_theta=10000.0,
-        rope_double_precision=True,
-        causal_offset=1,
-        timestep_scale_multiplier=1000,
-        cross_attn_timestep_scale_multiplier=1000,
-        rope_type="split",
-        use_prompt_embeddings=False,
-        perturbed_attn=False,
-    ).to(dtype=torch_dtype)
+    old_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch_dtype)
+    with _FastInit():
+        transformer = LTX2VideoTransformer3DModel(
+            in_channels=128,
+            out_channels=128,
+            patch_size=1,
+            patch_size_t=1,
+            num_attention_heads=32,
+            attention_head_dim=128,
+            cross_attention_dim=4096,
+            vae_scale_factors=(8, 32, 32),
+            pos_embed_max_pos=20,
+            base_height=2048,
+            base_width=2048,
+            gated_attn=True,
+            cross_attn_mod=True,
+            audio_in_channels=128,
+            audio_out_channels=128,
+            audio_patch_size=1,
+            audio_patch_size_t=1,
+            audio_num_attention_heads=32,
+            audio_attention_head_dim=64,
+            audio_cross_attention_dim=2048,
+            audio_scale_factor=4,
+            audio_pos_embed_max_pos=20,
+            audio_sampling_rate=16000,
+            audio_hop_length=160,
+            audio_gated_attn=True,
+            audio_cross_attn_mod=True,
+            num_layers=48,
+            activation_fn="gelu-approximate",
+            qk_norm="rms_norm_across_heads",
+            norm_elementwise_affine=False,
+            norm_eps=1e-6,
+            caption_channels=5376,
+            attention_bias=True,
+            attention_out_bias=True,
+            rope_theta=10000.0,
+            rope_double_precision=True,
+            causal_offset=1,
+            timestep_scale_multiplier=1000,
+            cross_attn_timestep_scale_multiplier=1000,
+            rope_type="split",
+            use_prompt_embeddings=False,
+            perturbed_attn=False,
+        )
+    torch.set_default_dtype(old_dtype)
     raw = _open_prefix(str(checkpoint), "model.")
     transformer_sd = _remap_transformer(_extract(raw, "model."))
     del raw
