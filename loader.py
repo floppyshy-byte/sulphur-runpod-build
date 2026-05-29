@@ -236,7 +236,21 @@ def _remap_vocoder(full_sd: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _find_safetensors(cache_dir: str) -> str | None:
+    # Fast path: direct HF cache layout for custom repo
+    repo_path = os.path.join(cache_dir, "models--Floppyshy--sulphur-2-runpod", "snapshots")
+    if os.path.isdir(repo_path):
+        for snapshot in os.listdir(repo_path):
+            snapshot_dir = os.path.join(repo_path, snapshot)
+            if not os.path.isdir(snapshot_dir):
+                continue
+            for f in os.listdir(snapshot_dir):
+                if f.endswith(".safetensors") and "sulphur" in f.lower():
+                    return os.path.join(snapshot_dir, f)
+    # Fallback: shallow walk (max depth 3)
     for root, _dirs, files in os.walk(cache_dir):
+        depth = root.count(os.sep) - cache_dir.count(os.sep)
+        if depth > 3:
+            continue
         for f in files:
             if f.endswith(".safetensors") and "sulphur" in f.lower():
                 return os.path.join(root, f)
@@ -244,15 +258,23 @@ def _find_safetensors(cache_dir: str) -> str | None:
 
 
 def _find_text_encoder_path(cache_dir: str) -> str | None:
-    # First look for text_encoder/ subdir in cached repos
+    # Fast path: direct HF cache layout for custom repo
+    repo_path = os.path.join(cache_dir, "models--Floppyshy--sulphur-2-runpod", "snapshots")
+    if os.path.isdir(repo_path):
+        for snapshot in os.listdir(repo_path):
+            te_dir = os.path.join(repo_path, snapshot, "text_encoder")
+            if os.path.isdir(te_dir) and "config.json" in os.listdir(te_dir):
+                return te_dir
+    # Fallback: shallow walk for text_encoder or gemma repos
     for root, dirs, _files in os.walk(cache_dir):
+        depth = root.count(os.sep) - cache_dir.count(os.sep)
+        if depth > 3:
+            continue
         if "text_encoder" in dirs:
             p = os.path.join(root, "text_encoder")
             for subroot, _subdirs, subfiles in os.walk(p):
                 if "config.json" in subfiles:
                     return subroot
-    # Fallback: look for gemma cached repo
-    for root, dirs, _files in os.walk(cache_dir):
         for d in dirs:
             if "gemma" in d.lower():
                 p = os.path.join(root, d)

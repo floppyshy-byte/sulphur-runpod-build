@@ -24,8 +24,10 @@ from loader import load_pipeline
 _pipe = None
 
 
-def _recursive_list_dir(path, prefix=""):
-    """Return a formatted recursive listing of a directory."""
+def _recursive_list_dir(path, prefix="", max_depth=2, current_depth=0):
+    """Return a formatted recursive listing of a directory, up to max_depth."""
+    if current_depth > max_depth:
+        return f"{prefix}..."
     lines = []
     try:
         entries = sorted(os.listdir(path))
@@ -35,9 +37,10 @@ def _recursive_list_dir(path, prefix=""):
         p = os.path.join(path, e)
         if os.path.isdir(p):
             lines.append(f"{prefix}{e}/")
-            sub = _recursive_list_dir(p, prefix + "  ")
-            if sub:
-                lines.append(sub)
+            if current_depth < max_depth:
+                sub = _recursive_list_dir(p, prefix + "  ", max_depth, current_depth + 1)
+                if sub:
+                    lines.append(sub)
         else:
             try:
                 size = os.path.getsize(p)
