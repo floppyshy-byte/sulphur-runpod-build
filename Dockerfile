@@ -30,8 +30,8 @@ ENV PATH="/app/.venv/bin:${PATH}"
 # Install PyTorch with CUDA 12.6
 RUN uv pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
 
-# Install diffusers (main branch for LTX2 support) and media deps
-RUN uv pip install git+https://github.com/huggingface/diffusers.git \
+# Install diffusers (0.38.0 for LTX2 support) and media deps
+RUN uv pip install diffusers==0.38.0 \
     transformers accelerate \
     imageio[ffmpeg] pillow safetensors bitsandbytes
 
