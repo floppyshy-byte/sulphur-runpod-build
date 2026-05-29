@@ -303,38 +303,40 @@ def load_pipeline(
     if text_encoder_path and os.path.isdir(text_encoder_path):
         text_encoder_src = text_encoder_path
     else:
-        text_encoder_src = "unsloth/gemma-3-12b-it-bnb-4bit"
+        text_encoder_src = "unsloth/gemma-3-12b-it"
 
-    print(f"[Sulphur] Checkpoint: {checkpoint}")
-    print(f"[Sulphur] Text encoder: {text_encoder_src}")
+    print(f"[Sulphur] Checkpoint: {checkpoint}", flush=True)
+    print(f"[Sulphur] Text encoder: {text_encoder_src}", flush=True)
 
     # Video VAE
-    print("[Sulphur] Building video VAE ...")
+    print("[Sulphur] Building video VAE ...", flush=True)
     vae = AutoencoderKLLTX2Video.from_config(dict(_VAE_CFG)).to(dtype=torch_dtype)
     raw = _open_prefix(str(checkpoint), "vae.")
     vae_sd = _remap_vae(raw)
     del raw
     gc.collect()
-    missing_v, unexpected_v = vae.load_state_dict(vae_sd, strict=False)
+    missing_v, unexpected_v = vae.load_state_dict(vae_sd, strict=False, assign=True)
     del vae_sd
     gc.collect()
-    print(f"  vae: {len(missing_v)} missing, {len(unexpected_v)} unexpected")
+    print(f"  vae: {len(missing_v)} missing, {len(unexpected_v)} unexpected", flush=True)
     vae = vae.to(device)
     gc.collect()
+    torch.cuda.empty_cache()
 
     # Audio VAE
-    print("[Sulphur] Building audio VAE ...")
+    print("[Sulphur] Building audio VAE ...", flush=True)
     audio_vae = AutoencoderKLLTX2Audio.from_config(_AUDIO_VAE_CFG).to(dtype=torch_dtype)
     raw = _open_prefix(str(checkpoint), "audio_vae.")
     audio_vae_sd = _remap_audio_vae(raw)
     del raw
     gc.collect()
-    missing_av, unexpected_av = audio_vae.load_state_dict(audio_vae_sd, strict=False)
+    missing_av, unexpected_av = audio_vae.load_state_dict(audio_vae_sd, strict=False, assign=True)
     del audio_vae_sd
     gc.collect()
-    print(f"  audio_vae: {len(missing_av)} missing, {len(unexpected_av)} unexpected")
+    print(f"  audio_vae: {len(missing_av)} missing, {len(unexpected_av)} unexpected", flush=True)
     audio_vae = audio_vae.to(device)
     gc.collect()
+    torch.cuda.empty_cache()
 
     # Text connectors
     print("[Sulphur] Building text connectors ...")
@@ -370,29 +372,31 @@ def load_pipeline(
     conn_sd = _remap_connectors(raw)
     del raw
     gc.collect()
-    missing_c, unexpected_c = connectors.load_state_dict(conn_sd, strict=False)
+    missing_c, unexpected_c = connectors.load_state_dict(conn_sd, strict=False, assign=True)
     del conn_sd
     gc.collect()
-    print(f"  connectors: {len(missing_c)} missing, {len(unexpected_c)} unexpected")
+    print(f"  connectors: {len(missing_c)} missing, {len(unexpected_c)} unexpected", flush=True)
     connectors = connectors.to(device)
     gc.collect()
+    torch.cuda.empty_cache()
 
     # Vocoder
-    print("[Sulphur] Building vocoder ...")
+    print("[Sulphur] Building vocoder ...", flush=True)
     vocoder = LTX2VocoderWithBWE().to(dtype=torch_dtype)
     raw = _open_prefix(str(checkpoint), "vocoder.")
     voc_sd = _remap_vocoder(raw)
     del raw
     gc.collect()
-    missing_voc, unexpected_voc = vocoder.load_state_dict(voc_sd, strict=False)
+    missing_voc, unexpected_voc = vocoder.load_state_dict(voc_sd, strict=False, assign=True)
     del voc_sd
     gc.collect()
-    print(f"  vocoder: {len(missing_voc)} missing, {len(unexpected_voc)} unexpected")
+    print(f"  vocoder: {len(missing_voc)} missing, {len(unexpected_voc)} unexpected", flush=True)
     vocoder = vocoder.to(device)
     gc.collect()
+    torch.cuda.empty_cache()
 
     # Transformer
-    print("[Sulphur] Building transformer ...")
+    print("[Sulphur] Building transformer ...", flush=True)
     transformer = LTX2VideoTransformer3DModel(
         in_channels=128,
         out_channels=128,
@@ -441,33 +445,29 @@ def load_pipeline(
     transformer_sd = _remap_transformer(_extract(raw, "model."))
     del raw
     gc.collect()
-    missing, unexpected = transformer.load_state_dict(transformer_sd, strict=False)
+    missing, unexpected = transformer.load_state_dict(transformer_sd, strict=False, assign=True)
     del transformer_sd
     gc.collect()
-    print(f"  transformer: {len(missing)} missing, {len(unexpected)} unexpected")
+    print(f"  transformer: {len(missing)} missing, {len(unexpected)} unexpected", flush=True)
     transformer = transformer.to(device)
     gc.collect()
     torch.cuda.empty_cache()
 
-    # Text encoder
-    print("[Sulphur] Loading text encoder ...")
-    if isinstance(text_encoder_src, str) and text_encoder_src.startswith("unsloth/"):
-        # Remote download — may fail if HF_HUB_OFFLINE=1
-        text_encoder = AutoModelForCausalLM.from_pretrained(
-            text_encoder_src,
-            device_map={"": 0},
-        )
-        tokenizer = AutoTokenizer.from_pretrained(text_encoder_src)
-    else:
-        text_encoder = AutoModelForCausalLM.from_pretrained(
-            str(text_encoder_src),
-            local_files_only=True,
-            device_map={"": 0},
-        )
-        tokenizer = AutoTokenizer.from_pretrained(
-            str(text_encoder_src),
-            local_files_only=True,
-        )
+    # Text encoder — load directly to GPU dtype to avoid CPU RAM spike
+    print("[Sulphur] Loading text encoder ...", flush=True)
+    te_kwargs = {
+        "torch_dtype": torch_dtype,
+        "local_files_only": True,
+    }
+    tok_kwargs = {
+        "local_files_only": True,
+    }
+    if device.startswith("cuda"):
+        te_kwargs["device_map"] = {"": 0}
+    text_encoder = AutoModelForCausalLM.from_pretrained(str(text_encoder_src), **te_kwargs)
+    tokenizer = AutoTokenizer.from_pretrained(str(text_encoder_src), **tok_kwargs)
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # Scheduler
     scheduler = LTXEulerAncestralRFScheduler()
