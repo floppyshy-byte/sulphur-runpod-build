@@ -1,12 +1,13 @@
 # =============================================================================
-# Sulphur-2 — RunPod Serverless Worker (minimal)
+# Sulphur-2 — RunPod Serverless Worker
 # =============================================================================
-# Single-stage build on python:3.11-slim.
-# PyTorch CUDA wheel bundles its own CUDA runtime libs;
-# NVIDIA container runtime mounts GPU drivers from host.
+# Uses RunPod's PyTorch base image with CUDA 12.8.1 + torch 2.8.0 pre-installed.
+# Model weights are cached via RunPod Model Cache, not baked into the image.
+# Add this HF repo ID when creating the endpoint:
+#   Floppyshy/sulphur-2-runpod
 # =============================================================================
 
-FROM python:3.11-slim
+FROM runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -17,10 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install PyTorch with CUDA 12.6
-RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
-
-# Install diffusers (0.38.0 for LTX2 support) and media deps
+# Install diffusers (0.38.0 for LTX2 support) and remaining deps
 RUN pip install --no-cache-dir diffusers==0.38.0 \
     transformers accelerate \
     imageio[ffmpeg] pillow safetensors bitsandbytes runpod
