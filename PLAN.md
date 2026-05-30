@@ -11,8 +11,8 @@ RunPod Serverless Container (stateless)
 HuggingFace Repo (Floppyshy/sulphur-2-runpod)
 ├── sulphur-2-base-Q4_K_M.gguf           ~14 GB
 ├── Sulphur-2-distill-lora.safetensors   ~10 GB
-├── ltx_2.3_video_vae.safetensors        ~1.5 GB
-├── ltx_2.3_audio_vae.safetensors        ~500 MB
+├── LTX23_video_vae_bf16.safetensors        ~1.35 GB
+├── LTX23_audio_vae_bf16.safetensors        ~348 MB
 ├── text_encoder/                         ~24 GB (Gemma-3-12B)
 └── tokenizer/                            ~4 MB
 
@@ -40,8 +40,8 @@ Custom nodes installed at build time:
 - REMOVE: `sulphur_distil_fp8mixed.safetensors` (29 GB, monolithic — not needed for ComfyUI)
 - ADD: `sulphur-2-base-Q4_K_M.gguf` (~14 GB, from Abiray/Sulphur-2-base-GGUF)
 - ADD: `Sulphur-2-distill-lora.safetensors` (~10 GB, from SulphurAI/Sulphur-2-base)
-- ADD: `ltx_2.3_video_vae.safetensors` (~1.5 GB, from Kijai/LTX2.3_comfy)
-- ADD: `ltx_2.3_audio_vae.safetensors` (~500 MB, from Kijai/LTX2.3_comfy)
+- ADD: `LTX23_video_vae_bf16.safetensors` (~1.35 GB, from Kijai/LTX2.3_comfy)
+- ADD: `LTX23_audio_vae_bf16.safetensors` (~348 MB, from Kijai/LTX2.3_comfy)
 - KEEP: `text_encoder/` (Gemma-3-12B safetensors)
 - KEEP: `tokenizer/` (tokenizer configs)
 

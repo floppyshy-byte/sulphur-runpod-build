@@ -9,8 +9,8 @@
 # HF repo layout (Floppyshy/sulphur-2-runpod):
 #   sulphur-2-base-Q4_K_M.gguf            (~14 GB)
 #   Sulphur-2-distill-lora.safetensors    (~10 GB)
-#   ltx_2.3_video_vae.safetensors         (~1.5 GB)
-#   ltx_2.3_audio_vae.safetensors         (~500 MB)
+#   LTX23_video_vae_bf16.safetensors         (~1.5 GB)
+#   LTX23_audio_vae_bf16.safetensors         (~500 MB)
 #   text_encoder/                          (~24 GB, Gemma-3-12B)
 #   tokenizer/                             (~4 MB)
 # =============================================================================
