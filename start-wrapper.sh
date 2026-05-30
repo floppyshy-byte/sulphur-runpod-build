@@ -7,80 +7,91 @@
 #   /runpod-volume/huggingface-cache/hub/models--Floppyshy--sulphur-2-runpod/
 #
 # We symlink from the HF cache into ComfyUI's expected directories.
+# If the cache is missing (e.g. smoke test without Model Cache), we warn
+# and continue — ComfyUI will still boot, just without models.
 # ---------------------------------------------------------------------------
 
-set -e
+# No set -e — we want to continue even if models are missing (smoke test)
 
 HF_CACHE="/runpod-volume/huggingface-cache/hub"
 REPO="models--Floppyshy--sulphur-2-runpod"
 COMFY="/comfyui"
+MISSING=0
 
 echo "[sulphur-gguf] Looking for HuggingFace cache..."
 
 # Find the snapshot directory (hash-named subfolder)
 SNAPSHOT_DIR="$HF_CACHE/$REPO/snapshots"
 if [ ! -d "$SNAPSHOT_DIR" ]; then
-    echo "[sulphur-gguf] ERROR: HF cache not found at $SNAPSHOT_DIR"
-    echo "[sulphur-gguf] Is the RunPod Model Cache configured with Floppyshy/sulphur-2-runpod?"
-    exit 1
+    echo "[sulphur-gguf] WARNING: HF cache not found at $SNAPSHOT_DIR"
+    echo "[sulphur-gguf] RunPod Model Cache not configured? Continuing without models."
+    MISSING=1
 fi
 
-SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
-if [ -z "$SNAP" ]; then
-    echo "[sulphur-gguf] ERROR: no snapshot found in $SNAPSHOT_DIR"
-    exit 1
-fi
-SNAP="${SNAP%/}"
-echo "[sulphur-gguf] Cache snapshot: $SNAP"
-
-# --- UNet / diffusion model (GGUF) ---
-echo "[sulphur-gguf] Symlinking UNet..."
-mkdir -p "$COMFY/models/unet"
-for f in "$SNAP"/*.gguf; do
-    [ -e "$f" ] || continue
-    bn=$(basename "$f")
-    ln -sf "$f" "$COMFY/models/unet/$bn"
-    echo "[sulphur-gguf]   unet: $bn"
-done
-
-# --- LoRAs ---
-echo "[sulphur-gguf] Symlinking LoRAs..."
-mkdir -p "$COMFY/models/loras"
-for f in "$SNAP"/*lora*.safetensors "$SNAP"/*distill*.safetensors; do
-    [ -e "$f" ] || continue
-    bn=$(basename "$f")
-    ln -sf "$f" "$COMFY/models/loras/$bn"
-    echo "[sulphur-gguf]   lora: $bn"
-done
-
-# --- VAE ---
-echo "[sulphur-gguf] Symlinking VAEs..."
-mkdir -p "$COMFY/models/vae"
-for f in "$SNAP"/*vae*.safetensors "$SNAP"/vae/*.safetensors; do
-    [ -e "$f" ] 2>/dev/null || continue
-    bn=$(basename "$f")
-    ln -sf "$f" "$COMFY/models/vae/$bn"
-    echo "[sulphur-gguf]   vae: $bn"
-done
-
-# --- Text encoder ---
-echo "[sulphur-gguf] Symlinking text encoder..."
-if [ -d "$SNAP/text_encoder" ]; then
-    mkdir -p "$COMFY/models/text_encoders"
-    ln -sfn "$SNAP/text_encoder" "$COMFY/models/text_encoders/gemma-3-12b-it"
-    echo "[sulphur-gguf]   text_encoder: gemma-3-12b-it"
+if [ "$MISSING" -eq 0 ]; then
+    SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
+    if [ -z "$SNAP" ]; then
+        echo "[sulphur-gguf] WARNING: no snapshot found in $SNAPSHOT_DIR"
+        echo "[sulphur-gguf] Continuing without models."
+        MISSING=1
+    else
+        SNAP="${SNAP%/}"
+        echo "[sulphur-gguf] Cache snapshot: $SNAP"
+    fi
 fi
 
-# --- Prompt enhancer (future) ---
-if [ -d "$SNAP/prompt_enhancer" ]; then
-    echo "[sulphur-gguf] Symlinking prompt enhancer..."
-    mkdir -p "$COMFY/models/prompt_enhancer"
-    for f in "$SNAP/prompt_enhancer"/*.gguf; do
+if [ "$MISSING" -eq 0 ]; then
+    # --- UNet / diffusion model (GGUF) ---
+    echo "[sulphur-gguf] Symlinking UNet..."
+    mkdir -p "$COMFY/models/unet"
+    for f in "$SNAP"/*.gguf; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        ln -sf "$f" "$COMFY/models/unet/$bn"
+        echo "[sulphur-gguf]   unet: $bn"
+    done
+
+    # --- LoRAs ---
+    echo "[sulphur-gguf] Symlinking LoRAs..."
+    mkdir -p "$COMFY/models/loras"
+    for f in "$SNAP"/*lora*.safetensors "$SNAP"/*distill*.safetensors; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        ln -sf "$f" "$COMFY/models/loras/$bn"
+        echo "[sulphur-gguf]   lora: $bn"
+    done
+
+    # --- VAE ---
+    echo "[sulphur-gguf] Symlinking VAEs..."
+    mkdir -p "$COMFY/models/vae"
+    for f in "$SNAP"/*vae*.safetensors "$SNAP"/vae/*.safetensors; do
         [ -e "$f" ] 2>/dev/null || continue
         bn=$(basename "$f")
-        ln -sf "$f" "$COMFY/models/prompt_enhancer/$bn"
-        echo "[sulphur-gguf]   prompt_enhancer: $bn"
+        ln -sf "$f" "$COMFY/models/vae/$bn"
+        echo "[sulphur-gguf]   vae: $bn"
     done
+
+    # --- Text encoder ---
+    echo "[sulphur-gguf] Symlinking text encoder..."
+    if [ -d "$SNAP/text_encoder" ]; then
+        mkdir -p "$COMFY/models/text_encoders"
+        ln -sfn "$SNAP/text_encoder" "$COMFY/models/text_encoders/gemma-3-12b-it"
+        echo "[sulphur-gguf]   text_encoder: gemma-3-12b-it"
+    else
+        echo "[sulphur-gguf]   text_encoder: not found (skipped)"
+    fi
+
+    # --- Prompt enhancer (future) ---
+    if [ -d "$SNAP/prompt_enhancer" ]; then
+        echo "[sulphur-gguf] Symlinking prompt enhancer..."
+        mkdir -p "$COMFY/models/prompt_enhancer"
+        for f in "$SNAP/prompt_enhancer"/*.gguf; do
+            [ -e "$f" ] 2>/dev/null || continue
+            bn=$(basename "$f")
+            ln -sf "$f" "$COMFY/models/prompt_enhancer/$bn"
+            echo "[sulphur-gguf]   prompt_enhancer: $bn"
+        done
+    fi
 fi
 
 echo "[sulphur-gguf] Done. Handing off to ComfyUI..."
