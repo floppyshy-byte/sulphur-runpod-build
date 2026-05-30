@@ -5,17 +5,23 @@
 ```
 RunPod Serverless Container (stateless)
 ├── ComfyUI + ComfyUI-GGUF + ComfyUI-LTXVideo + KJNodes
-├── start-wrapper.sh → symlinks models from network volume
-└── handler.py → receives ComfyUI workflow JSON, returns video
+├── start-wrapper.sh → symlinks models from HF cache into ComfyUI dirs
+└── handler.py → receives ComfyUI workflow JSON, returns video frames
 
-RunPod Network Volume (persistent)
-├── models/unet/          → GGUF quantized diffusion model
-├── models/loras/         → distill LoRA
-├── models/vae/           → LTX-2.3 video + audio VAE
-├── models/text_encoders/ → Gemma-3-12B
-├── models/prompt_enhancer/ → optional CPU-side prompt enhancer
-└── workflows/            → ComfyUI workflow JSON files
+HuggingFace Repo (Floppyshy/sulphur-2-runpod)
+├── sulphur-2-base-Q4_K_M.gguf           ~14 GB
+├── Sulphur-2-distill-lora.safetensors   ~10 GB
+├── ltx_2.3_video_vae.safetensors        ~1.5 GB
+├── ltx_2.3_audio_vae.safetensors        ~500 MB
+├── text_encoder/                         ~24 GB (Gemma-3-12B)
+└── tokenizer/                            ~4 MB
+
+RunPod Model Cache →
+  /runpod-volume/huggingface-cache/hub/
+    models--Floppyshy--sulphur-2-runpod/snapshots/<hash>/
 ```
+
+No network volume — everything is in the HF repo, cached to workers via RunPod Model Cache.
 
 ## Docker Image
 
@@ -26,37 +32,20 @@ Custom nodes installed at build time:
 - `Lightricks/ComfyUI-LTXVideo` — LTX pipeline nodes (scheduler, sampler)
 - `Kijai/ComfyUI-KJNodes` — LTX-2.3 VAE loader, audio VAE support
 
-`start-wrapper.sh` runs before `start.sh` to symlink models from `/runpod-volume` into ComfyUI directories.
-
-## Network Volume Layout
-
-```
-/runpod-volume/
-  models/
-    unet/
-      sulphur-2-base-Q4_K_M.gguf           ~14 GB
-    loras/
-      Sulphur-2-distill-lora.safetensors   ~10 GB
-    vae/
-      ltx_2.3_video_vae.safetensors        ~1.5 GB
-      ltx_2.3_audio_vae.safetensors        ~500 MB
-    text_encoders/
-      gemma-3-12b-it/                       ~24 GB (safetensors, from our HF repo)
-    prompt_enhancer/
-      sulphur_prompt_enhancer_model-q8_0.gguf   ~9.5 GB
-      mmproj-BF16.gguf                           ~2 GB
-```
-
-Total network volume: ~60 GB
+`start-wrapper.sh` runs before `start.sh` to symlink models from the HF cache into ComfyUI directories.
 
 ## HF Repo Changes
 
 `Floppyshy/sulphur-2-runpod`:
 - REMOVE: `sulphur_distil_fp8mixed.safetensors` (29 GB, monolithic — not needed for ComfyUI)
-- ADD: `sulphur-2-base-Q4_K_M.gguf` (~14 GB, from Abiray conversion)
-- ADD: `Sulphur-2-distill-lora.safetensors` (~10 GB, if not already present)
+- ADD: `sulphur-2-base-Q4_K_M.gguf` (~14 GB, from Abiray/Sulphur-2-base-GGUF)
+- ADD: `Sulphur-2-distill-lora.safetensors` (~10 GB, from SulphurAI/Sulphur-2-base)
+- ADD: `ltx_2.3_video_vae.safetensors` (~1.5 GB, from Kijai/LTX2.3_comfy)
+- ADD: `ltx_2.3_audio_vae.safetensors` (~500 MB, from Kijai/LTX2.3_comfy)
 - KEEP: `text_encoder/` (Gemma-3-12B safetensors)
 - KEEP: `tokenizer/` (tokenizer configs)
+
+Total: ~50 GB (vs 53 GB before)
 
 ## GPU Selection
 
@@ -66,39 +55,6 @@ Total network volume: ~60 GB
 | Q4_K_M | 14 GB | RTX 4090 (24 GB) | ~$1.12 | Recommended starting point |
 | Q5_K_M | 16 GB | L40S (48 GB) | ~$0.90 | Better quality |
 | Q8_0 | 23 GB | L40S (48 GB) | ~$0.90 | Near-lossless |
-
-## API Payload (ComfyUI workflow JSON)
-
-```json
-{
-  "input": {
-    "workflow": {
-      "10": {
-        "inputs": {"unet_name": "sulphur-2-base-Q4_K_M.gguf"},
-        "class_type": "UnetLoaderGGUF"
-      },
-      "11": {
-        "inputs": {
-          "lora_name": "Sulphur-2-distill-lora.safetensors",
-          "strength_model": 0.65,
-          "model": ["10", 0]
-        },
-        "class_type": "LoraLoader"
-      },
-      "12": {
-        "inputs": {
-          "steps": 8,
-          "cfg": 1.7,
-          "sampler_name": "euler",
-          "scheduler": "normal",
-          "model": ["11", 0]
-        },
-        "class_type": "KSampler"
-      }
-    }
-  }
-}
-```
 
 ## Inference Settings (Distilled + Quantized)
 
@@ -113,38 +69,34 @@ Total network volume: ~60 GB
 - `handler.py` — the custom RunPod handler (ComfyUI base image provides its own)
 - `Dockerfile` (old) — replaced by `Dockerfile.comfyui`
 - `sulphur_distil_fp8mixed.safetensors` — monolithic checkpoint (replaced by GGUF + separate components)
+- Network volume — replaced by HF repo + RunPod Model Cache
 
 ## Future Enhancements (Day 2+)
 
 ### Video MP4 Output (VHS + VideoOutputBridge)
-- Add `ComfyUI-VideoHelperSuite` node → `VHS_VideoCombine` merges frames into MP4/MKV
+- Add `ComfyUI-VideoHelperSuite` node → `VHS_VideoCombine` merges frames into MP4
 - Add `VideoOutputBridge` node → repackages VHS video output into standard `images` payload format so RunPod's handler picks it up without modification
 - Result: API returns MP4 video file (or S3 URL) instead of individual frame images
-- Install: `comfy node install comfyui-videohelpersuite` + `comfy node install video-output-bridge`
 
 ### Prompt Enhancer Integration
-- Add a ComfyUI node that wraps llama.cpp to run `sulphur_prompt_enhancer_model-q8_0.gguf` on CPU
-- Runs as a pre-processing step before the main pipeline: simple prompt → enhanced cinematic prompt
-- The enhancer model is Sulphur-specific, trained to write prompts that work well with Sulphur-2
-- Requires `ComfyUI_Simple_Qwen3-VL-gguf` or a similar LLM-loader node for ComfyUI
-- Alternative: run enhancer as a separate microservice, call it before hitting the ComfyUI endpoint
+- Add `sulphur_prompt_enhancer_model-q8_0.gguf` (~9.5 GB) and `mmproj-BF16.gguf` (~2 GB) to HF repo
+- Add ComfyUI LLM-loader node to run enhancer on CPU as a pre-processing step
+- Alternative: run enhancer as a separate microservice before calling ComfyUI
 
 ### Higher Quality Quants
-- Add Q5_K_M (16 GB) or Q8_0 (23 GB) GGUF files to network volume for quality-sensitive jobs
+- Add Q5_K_M (16 GB) or Q8_0 (23 GB) GGUF files to HF repo for quality-sensitive jobs
 - Requires GPU upgrade: L40S (48 GB) at ~$0.90/hr
 - Simple filename swap in the workflow JSON — no code changes
 
 ### Audio Generation
-- Add LTX-2.3 audio VAE loader and vocoder nodes (already have the VAE file)
+- Add LTX-2.3 audio VAE loader and vocoder nodes (VAE file already in repo)
 - Enable native sync audio with video output
 - Requires KJNodes audio pipeline nodes (already installed)
 
 ## Build & Deploy Steps
 
-1. Update `Dockerfile.comfyui` with KJNodes
-2. Build and push Docker image (GHCR or RunPod native build)
-3. Populate network volume with all model files
-4. Update HF repo (remove safetensors, add GGUF)
-5. Create RunPod serverless endpoint (RTX 4090, attached network volume)
-6. Write and test ComfyUI workflow JSON
-7. Submit test job, verify video output
+1. Download model files to HF repo (or upload via huggingface-cli)
+2. Build and push Docker image (RunPod native build pointing at Dockerfile.comfyui)
+3. Create RunPod serverless endpoint (RTX 4090, Model Cache: Floppyshy/sulphur-2-runpod)
+4. Write and test ComfyUI workflow JSON
+5. Submit test job, verify video output

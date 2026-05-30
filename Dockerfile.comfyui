@@ -2,15 +2,17 @@
 # Sulphur-2 GGUF — RunPod Serverless Worker (ComfyUI)
 # =============================================================================
 # Extends RunPod's official ComfyUI worker with GGUF and LTX-Video support.
-# Sulphur-2 GGUF + Gemma text encoder are stored on a RunPod Network Volume.
+# Models are stored in HuggingFace repo "Floppyshy/sulphur-2-runpod" and
+# cached to the worker via RunPod Model Cache. start-wrapper.sh symlinks
+# from the HF cache into ComfyUI's expected model directories.
 #
-# Network volume layout expected at /runpod-volume:
-#   models/unet/sulphur-2-base-Q4_K_M.gguf
-#   models/loras/Sulphur-2-distill-lora.safetensors
-#   models/vae/ltx_2.3_video_vae.safetensors
-#   models/vae/ltx_2.3_audio_vae.safetensors
-#   models/text_encoders/gemma-3-12b-it/    (HuggingFace model files)
-#   models/prompt_enhancer/sulphur_prompt_enhancer_model-q8_0.gguf
+# HF repo layout (Floppyshy/sulphur-2-runpod):
+#   sulphur-2-base-Q4_K_M.gguf            (~14 GB)
+#   Sulphur-2-distill-lora.safetensors    (~10 GB)
+#   ltx_2.3_video_vae.safetensors         (~1.5 GB)
+#   ltx_2.3_audio_vae.safetensors         (~500 MB)
+#   text_encoder/                          (~24 GB, Gemma-3-12B)
+#   tokenizer/                             (~4 MB)
 # =============================================================================
 
 ARG COMFYUI_VERSION=5.8.5

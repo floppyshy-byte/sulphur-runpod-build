@@ -2,95 +2,84 @@
 # ---------------------------------------------------------------------------
 # Sulphur-2 GGUF — Model symlink wrapper for RunPod Serverless
 # ---------------------------------------------------------------------------
-# Network volume mounts at /runpod-volume on serverless workers.
-# We symlink the persistent models into ComfyUI's expected directories
-# so the base image's start.sh and handler.py work without modification.
+# Models are cached via RunPod Model Cache from HuggingFace repo
+# "Floppyshy/sulphur-2-runpod". The cache lands at:
+#   /runpod-volume/huggingface-cache/hub/models--Floppyshy--sulphur-2-runpod/
+#
+# We symlink from the HF cache into ComfyUI's expected directories.
 # ---------------------------------------------------------------------------
 
 set -e
 
-NV="/runpod-volume"
+HF_CACHE="/runpod-volume/huggingface-cache/hub"
+REPO="models--Floppyshy--sulphur-2-runpod"
 COMFY="/comfyui"
 
-echo "[sulphur-gguf] Setting up model symlinks from network volume..."
+echo "[sulphur-gguf] Looking for HuggingFace cache..."
+
+# Find the snapshot directory (hash-named subfolder)
+SNAPSHOT_DIR="$HF_CACHE/$REPO/snapshots"
+if [ ! -d "$SNAPSHOT_DIR" ]; then
+    echo "[sulphur-gguf] ERROR: HF cache not found at $SNAPSHOT_DIR"
+    echo "[sulphur-gguf] Is the RunPod Model Cache configured with Floppyshy/sulphur-2-runpod?"
+    exit 1
+fi
+
+SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
+if [ -z "$SNAP" ]; then
+    echo "[sulphur-gguf] ERROR: no snapshot found in $SNAPSHOT_DIR"
+    exit 1
+fi
+SNAP="${SNAP%/}"
+echo "[sulphur-gguf] Cache snapshot: $SNAP"
 
 # --- UNet / diffusion model (GGUF) ---
-if [ -d "$NV/models/unet" ]; then
-    mkdir -p "$COMFY/models/unet"
-    for f in "$NV/models/unet"/*.gguf; do
-        [ -e "$f" ] || continue
-        bn=$(basename "$f")
-        if [ ! -e "$COMFY/models/unet/$bn" ]; then
-            ln -s "$f" "$COMFY/models/unet/$bn"
-            echo "[sulphur-gguf]   unet: $bn"
-        fi
-    done
-else
-    echo "[sulphur-gguf] WARNING: no models/unet on network volume"
-fi
+echo "[sulphur-gguf] Symlinking UNet..."
+mkdir -p "$COMFY/models/unet"
+for f in "$SNAP"/*.gguf; do
+    [ -e "$f" ] || continue
+    bn=$(basename "$f")
+    ln -sf "$f" "$COMFY/models/unet/$bn"
+    echo "[sulphur-gguf]   unet: $bn"
+done
 
 # --- LoRAs ---
-if [ -d "$NV/models/loras" ]; then
-    mkdir -p "$COMFY/models/loras"
-    for f in "$NV/models/loras"/*; do
-        [ -e "$f" ] || continue
-        bn=$(basename "$f")
-        if [ ! -e "$COMFY/models/loras/$bn" ]; then
-            ln -s "$f" "$COMFY/models/loras/$bn"
-            echo "[sulphur-gguf]   lora: $bn"
-        fi
-    done
-fi
+echo "[sulphur-gguf] Symlinking LoRAs..."
+mkdir -p "$COMFY/models/loras"
+for f in "$SNAP"/*lora*.safetensors "$SNAP"/*distill*.safetensors; do
+    [ -e "$f" ] || continue
+    bn=$(basename "$f")
+    ln -sf "$f" "$COMFY/models/loras/$bn"
+    echo "[sulphur-gguf]   lora: $bn"
+done
 
-# --- VAE (video + audio) ---
-if [ -d "$NV/models/vae" ]; then
-    mkdir -p "$COMFY/models/vae"
-    for f in "$NV/models/vae"/*; do
-        [ -e "$f" ] || continue
-        bn=$(basename "$f")
-        if [ ! -e "$COMFY/models/vae/$bn" ]; then
-            ln -s "$f" "$COMFY/models/vae/$bn"
-            echo "[sulphur-gguf]   vae: $bn"
-        fi
-    done
-fi
+# --- VAE ---
+echo "[sulphur-gguf] Symlinking VAEs..."
+mkdir -p "$COMFY/models/vae"
+for f in "$SNAP"/*vae*.safetensors "$SNAP"/vae/*.safetensors; do
+    [ -e "$f" ] 2>/dev/null || continue
+    bn=$(basename "$f")
+    ln -sf "$f" "$COMFY/models/vae/$bn"
+    echo "[sulphur-gguf]   vae: $bn"
+done
 
-# --- Text encoders (Gemma 3 12B as HF snapshot) ---
-if [ -d "$NV/models/text_encoders" ]; then
+# --- Text encoder ---
+echo "[sulphur-gguf] Symlinking text encoder..."
+if [ -d "$SNAP/text_encoder" ]; then
     mkdir -p "$COMFY/models/text_encoders"
-    for d in "$NV/models/text_encoders"/*/; do
-        [ -d "$d" ] || continue
-        bn=$(basename "$d")
-        if [ ! -e "$COMFY/models/text_encoders/$bn" ]; then
-            ln -s "$d" "$COMFY/models/text_encoders/$bn"
-            echo "[sulphur-gguf]   text_encoder: $bn"
-        fi
-    done
+    ln -sfn "$SNAP/text_encoder" "$COMFY/models/text_encoders/gemma-3-12b-it"
+    echo "[sulphur-gguf]   text_encoder: gemma-3-12b-it"
 fi
 
-# --- CLIP ---
-if [ -d "$NV/models/clip" ]; then
-    mkdir -p "$COMFY/models/clip"
-    for f in "$NV/models/clip"/*; do
-        [ -e "$f" ] || continue
-        bn=$(basename "$f")
-        if [ ! -e "$COMFY/models/clip/$bn" ]; then
-            ln -s "$f" "$COMFY/models/clip/$bn"
-            echo "[sulphur-gguf]   clip: $bn"
-        fi
-    done
-fi
-
-# --- Prompt enhancer (GGUF, runs on CPU via llama.cpp) ---
-if [ -d "$NV/models/prompt_enhancer" ]; then
+# --- Prompt enhancer (future) ---
+if [ -d "$SNAP/prompt_enhancer" ]; then
+    echo "[sulphur-gguf] Symlinking prompt enhancer..."
     mkdir -p "$COMFY/models/prompt_enhancer"
-    for f in "$NV/models/prompt_enhancer"/*; do
-        [ -e "$f" ] || continue
+    for f in "$SNAP/prompt_enhancer"/*.gguf; do
+        [ -e "$f" ] 2>/dev/null || continue
         bn=$(basename "$f")
-        if [ ! -e "$COMFY/models/prompt_enhancer/$bn" ]; then
-            ln -s "$f" "$COMFY/models/prompt_enhancer/$bn"
-            echo "[sulphur-gguf]   prompt_enhancer: $bn"
-        fi
+        ln -sf "$f" "$COMFY/models/prompt_enhancer/$bn"
+        echo "[sulphur-gguf]   prompt_enhancer: $bn"
     done
 fi
 
