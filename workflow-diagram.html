@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sulphur-2 ComfyUI + GGUF — Workflow</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #e0e0e0; }
+  h1 { color: #ff6b6b; }
+  h2 { color: #feca57; border-bottom: 1px solid #333; padding-bottom: 5px; margin-top: 40px; }
+  .mermaid { background: #16213e; border-radius: 8px; padding: 20px; margin: 20px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+  th, td { border: 1px solid #333; padding: 8px 12px; text-align: left; }
+  th { background: #2a2a4a; }
+  code { background: #2a2a4a; padding: 2px 6px; border-radius: 3px; }
+  .note { background: #2a2a4a; border-left: 3px solid #feca57; padding: 10px 15px; margin: 15px 0; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Sulphur-2 ComfyUI + GGUF — Architecture &amp; Workflow</h1>
+
+<h2>System Architecture</h2>
+<pre class="mermaid">
+flowchart TB
+    subgraph Client["🖥️ Client"]
+        A[API POST - workflow JSON + prompt]
+    end
+
+    subgraph RunPod["☁️ RunPod Serverless"]
+        subgraph Container["📦 Stateless Container"]
+            B[handler.py - RunPod worker]
+            C[start-wrapper.sh - symlink models]
+            D[ComfyUI - localhost:8188]
+            E[custom_nodes/ - GGUF, LTXVideo, KJNodes, VHS]
+        end
+
+        subgraph Cache["💾 RunPod Model Cache"]
+            F[(HF Cache - Floppyshy/sulphur-2-runpod)]
+        end
+    end
+
+    subgraph HF["🤗 HuggingFace"]
+        G[Floppyshy/sulphur-2-runpod - 43 GB]
+    end
+
+    A -->|"POST /run"| B
+    C -->|symlinks| F
+    B -->|"queues workflow"| D
+    D --> E
+    D -->|reads models from| F
+    G -->|"cached at deploy"| F
+    B -->|"returns frames/video"| A
+</pre>
+
+<h2>Cold Start Sequence</h2>
+<pre class="mermaid">
+sequenceDiagram
+    participant R as RunPod
+    participant W as Worker Container
+    participant S as start-wrapper.sh
+    participant C as ComfyUI
+    participant H as HF Cache
+
+    R->>W: Start container
+    W->>S: CMD /start-wrapper.sh
+    S->>H: Find snapshot in models--Floppyshy--sulphur-2-runpod
+    S->>S: Symlink GGUF to models/unet/
+    S->>S: Symlink LoRA to models/loras/
+    S->>S: Symlink VAEs to models/vae/
+    S->>S: Symlink text_encoder to models/text_encoders/
+    S->>S: Symlink prompt_enhancer to models/prompt_enhancer/
+    S->>W: exec /start.sh
+    W->>C: Launch ComfyUI (python main.py)
+    C->>C: Load custom nodes
+    C-->>R: Health check OK
+    R->>W: Job ready
+</pre>
+
+<h2>Inference Flow</h2>
+<pre class="mermaid">
+sequenceDiagram
+    participant Client
+    participant Handler as handler.py
+    participant Comfy as ComfyUI :8188
+    participant GPU
+
+    Client->>Handler: POST {input: {workflow: {...}}}
+    Handler->>Handler: Validate workflow JSON
+    Handler->>Comfy: Check health (GET /)
+    Comfy-->>Handler: OK
+    Handler->>Comfy: Upload images (if i2v)
+    Handler->>Comfy: POST /prompt {workflow}
+    Comfy->>GPU: Load GGUF (UnetLoaderGGUF)
+    Comfy->>GPU: Load LoRA (LoraLoader, 0.65)
+    Comfy->>GPU: Load text encoder (Gemma FP8)
+    Comfy->>GPU: Load VAE (LTX23_video_vae_bf16)
+    Comfy->>GPU: Encode prompt to condition
+    Comfy->>GPU: Sample latents (8 steps, CFG 1.7)
+    Comfy->>GPU: Decode latents to frames (VAE Decode)
+    Comfy-->>Handler: WebSocket: executing... done
+    Handler->>Comfy: GET /history/{prompt_id}
+    Comfy-->>Handler: Output images
+    Handler-->>Client: {images: [{filename, data: base64}]}
+</pre>
+
+<h2>ComfyUI Node Graph</h2>
+<pre class="mermaid">
+flowchart LR
+    subgraph Input["📥 Input"]
+        P[Prompt - a cat walking]
+    end
+
+    subgraph Loaders["📦 Model Loaders"]
+        GGUF[UnetLoaderGGUF - Q4_K_M.gguf]
+        LORA[LoraLoader - distill LoRA - strength 0.65]
+        TE[Gemma Text Encoder - FP8 scaled]
+        VAE[VAE Loader - LTX23 video VAE]
+    end
+
+    subgraph Pipeline["⚙️ LTX Pipeline"]
+        ENCODE[CLIPTextEncode]
+        SAMPLE[KSampler - 8 steps, CFG 1.7 - euler + normal]
+        DECODE[VAE Decode]
+    end
+
+    subgraph Output["📤 Output"]
+        FRAMES[Video Frames - base64 or MP4]
+    end
+
+    P --> ENCODE
+    TE --> ENCODE
+    GGUF --> LORA
+    LORA --> SAMPLE
+    ENCODE -->|conditioning| SAMPLE
+    SAMPLE -->|latents| DECODE
+    VAE --> DECODE
+    DECODE --> FRAMES
+</pre>
+
+<h2>HF Repo → ComfyUI Model Directories</h2>
+<pre class="mermaid">
+flowchart TB
+    subgraph HFRepo["🤗 HF Repo: Floppyshy/sulphur-2-runpod"]
+        U[sulphur-2-base-Q4_K_M.gguf - 13 GB]
+        L[sulphur_lora_rank_768.safetensors - 10 GB]
+        VV[LTX23_video_vae_bf16.safetensors - 1.4 GB]
+        AV[LTX23_audio_vae_bf16.safetensors - 348 MB]
+        TV[taeltx2_3.safetensors - 22 MB]
+        TE[text_encoder/ - config + FP8 scaled - 12 GB]
+        TK[tokenizer/ - 10 config files]
+        PE[prompt_enhancer/ - Q4_K_M + mmproj - 6 GB]
+    end
+
+    subgraph ComfyDir["📁 /comfyui/models/"]
+        MU[unet/]
+        ML[loras/]
+        MV[vae/]
+        MT[text_encoders/]
+        MP[prompt_enhancer/]
+    end
+
+    HFRepo -->|"start-wrapper.sh symlinks at boot"| ComfyDir
+</pre>
+
+<h2>Key Settings</h2>
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Notes</th></tr>
+  <tr><td>Model</td><td>Q4_K_M GGUF</td><td>13 GB, fits RTX 4090</td></tr>
+  <tr><td>LoRA strength</td><td>0.65</td><td>Reduced for quantized base</td></tr>
+  <tr><td>Sampling steps</td><td>6–8</td><td>Enough for distilled + quantized</td></tr>
+  <tr><td>CFG</td><td>1.5–2.0</td><td>Lower to avoid artifacts</td></tr>
+  <tr><td>Resolution</td><td>480p default</td><td></td></tr>
+  <tr><td>GPU</td><td>RTX 4090 (24 GB)</td><td>~$1.12/hr</td></tr>
+</table>
+
+<div class="note">
+<strong>Note:</strong> We do not yet have a ComfyUI workflow JSON file. The node graph above shows the intended node layout — the workflow JSON needs to be created matching the exact node IDs and class types from the installed custom nodes (UnetLoaderGGUF, LTX nodes from ComfyUI-LTXVideo, KJNodes VAE loaders, VHS Video Combine).
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+</script>
+</body>
+</html>
