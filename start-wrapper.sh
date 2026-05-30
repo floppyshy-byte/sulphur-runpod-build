@@ -2,107 +2,129 @@
 # ---------------------------------------------------------------------------
 # Sulphur-2 GGUF — Model symlink wrapper for RunPod Serverless
 # ---------------------------------------------------------------------------
-# Models are stored on a RunPod Network Volume mounted at /runpod-volume.
-# We symlink from the network volume into ComfyUI's expected directories.
+# Models are cached via RunPod Model Cache from HuggingFace repo
+# "Floppyshy/sulphur-2-runpod". The cache lands at:
+#   /runpod-volume/huggingface-cache/hub/models--Floppyshy--sulphur-2-runpod/
 #
-# Network volume layout:
-#   /runpod-volume/models/unet/
-#   /runpod-volume/models/loras/
-#   /runpod-volume/models/vae/
-#   /runpod-volume/models/text_encoders/
-#   /runpod-volume/models/prompt_enhancer/
+# We symlink from the HF cache into ComfyUI's expected directories.
+# If the cache is missing (e.g. smoke test without Model Cache), we warn
+# and continue — ComfyUI will still boot, just without models.
 # ---------------------------------------------------------------------------
 
-set -e
+# No set -e — we want to continue even if models are missing (smoke test)
 
-MODELS="/runpod-volume/models"
+HF_CACHE="/runpod-volume/huggingface-cache/hub"
+REPO="models--Floppyshy--sulphur-2-runpod"
 COMFY="/comfyui"
+MISSING=0
 
-echo "[sulphur-gguf] Checking for models on network volume..."
+echo "[sulphur-gguf] Looking for HuggingFace cache..."
 
-if [ ! -d "$MODELS" ]; then
-    echo "[sulphur-gguf] ERROR: /runpod-volume/models not found"
-    echo "[sulphur-gguf] Network volume not attached? Mount path wrong?"
-    exit 1
+# Diagnostic: show what's mounted at /runpod-volume
+echo "[sulphur-gguf] /runpod-volume contents:"
+ls -la /runpod-volume/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
+
+# Check for the HF cache repo directory
+REPO_DIR="$HF_CACHE/$REPO"
+echo "[sulphur-gguf] $REPO_DIR contents:"
+ls -la "$REPO_DIR/" 2>/dev/null || echo "[sulphur-gguf]   (not found)"
+
+# Show refs (git references — which commit is cached)
+if [ -d "$REPO_DIR/refs" ]; then
+    echo "[sulphur-gguf] refs:"
+    cat "$REPO_DIR/refs/"* 2>/dev/null || echo "[sulphur-gguf]   (empty)"
 fi
 
-echo "[sulphur-gguf] /runpod-volume/models contents:"
-ls -la "$MODELS/" 2>/dev/null || true
-
-# --- UNet / diffusion model (GGUF) ---
-echo "[sulphur-gguf] Symlinking UNet..."
-mkdir -p "$COMFY/models/unet"
-UNET_COUNT=0
-for f in "$MODELS"/unet/*.gguf; do
-    [ -e "$f" ] || continue
-    bn=$(basename "$f")
-    ln -sf "$f" "$COMFY/models/unet/$bn"
-    echo "[sulphur-gguf]   unet: $bn"
-    UNET_COUNT=$((UNET_COUNT + 1))
-done
-if [ "$UNET_COUNT" -eq 0 ]; then
-    echo "[sulphur-gguf] ERROR: no GGUF file found in $MODELS/unet/"
-    exit 1
-fi
-
-# --- LoRAs ---
-echo "[sulphur-gguf] Symlinking LoRAs..."
-mkdir -p "$COMFY/models/loras"
-LORA_COUNT=0
-for f in "$MODELS"/loras/*.safetensors; do
-    [ -e "$f" ] || continue
-    bn=$(basename "$f")
-    ln -sf "$f" "$COMFY/models/loras/$bn"
-    echo "[sulphur-gguf]   lora: $bn"
-    LORA_COUNT=$((LORA_COUNT + 1))
-done
-if [ "$LORA_COUNT" -eq 0 ]; then
-    echo "[sulphur-gguf] WARNING: no LoRA files found in $MODELS/loras/"
-fi
-
-# --- VAE ---
-echo "[sulphur-gguf] Symlinking VAEs..."
-mkdir -p "$COMFY/models/vae"
-VAE_COUNT=0
-for f in "$MODELS"/vae/*.safetensors; do
-    [ -e "$f" ] || continue
-    bn=$(basename "$f")
-    ln -sf "$f" "$COMFY/models/vae/$bn"
-    echo "[sulphur-gguf]   vae: $bn"
-    VAE_COUNT=$((VAE_COUNT + 1))
-done
-if [ "$VAE_COUNT" -eq 0 ]; then
-    echo "[sulphur-gguf] ERROR: no VAE files found in $MODELS/vae/"
-    exit 1
-fi
-
-# --- Text encoder ---
-echo "[sulphur-gguf] Symlinking text encoder..."
-if [ -d "$MODELS/text_encoders" ]; then
-    mkdir -p "$COMFY/models/text_encoders"
-    # Find the first text_encoder subdirectory
-    for d in "$MODELS"/text_encoders/*/; do
-        [ -d "$d" ] || continue
-        bn=$(basename "$d")
-        ln -sfn "$d" "$COMFY/models/text_encoders/$bn"
-        echo "[sulphur-gguf]   text_encoder: $bn"
-        break
-    done
+# Show snapshots
+SNAPSHOT_DIR="$REPO_DIR/snapshots"
+if [ -d "$SNAPSHOT_DIR" ]; then
+    echo "[sulphur-gguf] snapshots:"
+    ls -la "$SNAPSHOT_DIR/" 2>/dev/null
 else
-    echo "[sulphur-gguf] ERROR: text_encoders directory not found in $MODELS/"
-    exit 1
+    echo "[sulphur-gguf] WARNING: no snapshots at $SNAPSHOT_DIR"
+    echo "[sulphur-gguf] RunPod Model Cache not configured or still downloading?"
+    MISSING=1
 fi
 
-# --- Prompt enhancer (optional) ---
-if [ -d "$MODELS/prompt_enhancer" ]; then
-    echo "[sulphur-gguf] Symlinking prompt enhancer..."
-    mkdir -p "$COMFY/models/prompt_enhancer"
-    for f in "$MODELS"/prompt_enhancer/*.gguf; do
+# Find the snapshot directory following RunPod docs approach:
+# 1. Read refs/main to get the canonical hash
+# 2. Fallback: first snapshot directory
+if [ "$MISSING" -eq 0 ]; then
+    SNAP=""
+    if [ -f "$REPO_DIR/refs/main" ]; then
+        HASH=$(cat "$REPO_DIR/refs/main" 2>/dev/null)
+        if [ -n "$HASH" ] && [ -d "$SNAPSHOT_DIR/$HASH" ]; then
+            SNAP="$SNAPSHOT_DIR/$HASH"
+            echo "[sulphur-gguf] Using refs/main: $HASH"
+        fi
+    fi
+    if [ -z "$SNAP" ]; then
+        SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
+        [ -n "$SNAP" ] && echo "[sulphur-gguf] Fallback: first snapshot dir"
+    fi
+    if [ -z "$SNAP" ]; then
+        echo "[sulphur-gguf] WARNING: no snapshot hash dirs in $SNAPSHOT_DIR"
+        MISSING=1
+    else
+        SNAP="${SNAP%/}"
+        echo "[sulphur-gguf] Cache snapshot: $SNAP"
+        echo "[sulphur-gguf] Snapshot files:"
+        ls -la "$SNAP/" 2>/dev/null | head -20
+    fi
+fi
+
+if [ "$MISSING" -eq 0 ]; then
+    # --- UNet / diffusion model (GGUF) ---
+    echo "[sulphur-gguf] Symlinking UNet..."
+    mkdir -p "$COMFY/models/unet"
+    for f in "$SNAP"/*.gguf; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        ln -sf "$f" "$COMFY/models/unet/$bn"
+        echo "[sulphur-gguf]   unet: $bn"
+    done
+
+    # --- LoRAs ---
+    echo "[sulphur-gguf] Symlinking LoRAs..."
+    mkdir -p "$COMFY/models/loras"
+    for f in "$SNAP"/*lora*.safetensors "$SNAP"/*distill*.safetensors; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        ln -sf "$f" "$COMFY/models/loras/$bn"
+        echo "[sulphur-gguf]   lora: $bn"
+    done
+
+    # --- VAE ---
+    echo "[sulphur-gguf] Symlinking VAEs..."
+    mkdir -p "$COMFY/models/vae"
+    for f in "$SNAP"/*vae*.safetensors "$SNAP"/vae/*.safetensors; do
         [ -e "$f" ] 2>/dev/null || continue
         bn=$(basename "$f")
-        ln -sf "$f" "$COMFY/models/prompt_enhancer/$bn"
-        echo "[sulphur-gguf]   prompt_enhancer: $bn"
+        ln -sf "$f" "$COMFY/models/vae/$bn"
+        echo "[sulphur-gguf]   vae: $bn"
     done
+
+    # --- Text encoder ---
+    echo "[sulphur-gguf] Symlinking text encoder..."
+    if [ -d "$SNAP/text_encoder" ]; then
+        mkdir -p "$COMFY/models/text_encoders"
+        ln -sfn "$SNAP/text_encoder" "$COMFY/models/text_encoders/gemma-3-12b-it"
+        echo "[sulphur-gguf]   text_encoder: gemma-3-12b-it"
+    else
+        echo "[sulphur-gguf]   text_encoder: not found (skipped)"
+    fi
+
+    # --- Prompt enhancer (future) ---
+    if [ -d "$SNAP/prompt_enhancer" ]; then
+        echo "[sulphur-gguf] Symlinking prompt enhancer..."
+        mkdir -p "$COMFY/models/prompt_enhancer"
+        for f in "$SNAP/prompt_enhancer"/*.gguf; do
+            [ -e "$f" ] 2>/dev/null || continue
+            bn=$(basename "$f")
+            ln -sf "$f" "$COMFY/models/prompt_enhancer/$bn"
+            echo "[sulphur-gguf]   prompt_enhancer: $bn"
+        done
+    fi
 fi
 
 echo "[sulphur-gguf] Done. Handing off to ComfyUI..."
