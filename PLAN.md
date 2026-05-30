@@ -114,9 +114,30 @@ Total network volume: ~60 GB
 - `Dockerfile` (old) — replaced by `Dockerfile.comfyui`
 - `sulphur_distil_fp8mixed.safetensors` — monolithic checkpoint (replaced by GGUF + separate components)
 
-## Future Enhancements
+## Future Enhancements (Day 2+)
 
-- **Prompt enhancer integration** — Add a ComfyUI-LLM node or llama.cpp wrapper to run the `sulphur_prompt_enhancer_model-q8_0.gguf` as a pre-processing step inside ComfyUI, so short prompts are automatically expanded before generation.
+### Video MP4 Output (VHS + VideoOutputBridge)
+- Add `ComfyUI-VideoHelperSuite` node → `VHS_VideoCombine` merges frames into MP4/MKV
+- Add `VideoOutputBridge` node → repackages VHS video output into standard `images` payload format so RunPod's handler picks it up without modification
+- Result: API returns MP4 video file (or S3 URL) instead of individual frame images
+- Install: `comfy node install comfyui-videohelpersuite` + `comfy node install video-output-bridge`
+
+### Prompt Enhancer Integration
+- Add a ComfyUI node that wraps llama.cpp to run `sulphur_prompt_enhancer_model-q8_0.gguf` on CPU
+- Runs as a pre-processing step before the main pipeline: simple prompt → enhanced cinematic prompt
+- The enhancer model is Sulphur-specific, trained to write prompts that work well with Sulphur-2
+- Requires `ComfyUI_Simple_Qwen3-VL-gguf` or a similar LLM-loader node for ComfyUI
+- Alternative: run enhancer as a separate microservice, call it before hitting the ComfyUI endpoint
+
+### Higher Quality Quants
+- Add Q5_K_M (16 GB) or Q8_0 (23 GB) GGUF files to network volume for quality-sensitive jobs
+- Requires GPU upgrade: L40S (48 GB) at ~$0.90/hr
+- Simple filename swap in the workflow JSON — no code changes
+
+### Audio Generation
+- Add LTX-2.3 audio VAE loader and vocoder nodes (already have the VAE file)
+- Enable native sync audio with video output
+- Requires KJNodes audio pipeline nodes (already installed)
 
 ## Build & Deploy Steps
 
