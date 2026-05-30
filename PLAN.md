@@ -79,7 +79,7 @@ Total: ~50 GB (vs 53 GB before)
 - Result: API returns MP4 video file (or S3 URL) instead of individual frame images
 
 ### Prompt Enhancer Integration
-- Add `sulphur_prompt_enhancer_model-q8_0.gguf` (~9.5 GB) and `mmproj-BF16.gguf` (~2 GB) to HF repo
+- Add `sulphur_prompt_enhancer-Q4_K_M-imatrix.gguf` (~5.2 GB) and `sulphur_prompt_enhancer-mmproj-BF16.gguf` (~879 MB) to HF repo
 - Add ComfyUI LLM-loader node to run enhancer on CPU as a pre-processing step
 - Alternative: run enhancer as a separate microservice before calling ComfyUI
 
