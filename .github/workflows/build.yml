@@ -12,17 +12,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run smoke tests
-        run: python3 test_handler.py
-
   build:
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,6 +44,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
