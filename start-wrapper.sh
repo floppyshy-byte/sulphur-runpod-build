@@ -23,28 +23,40 @@ echo "[sulphur-gguf] Looking for HuggingFace cache..."
 # Diagnostic: show what's mounted at /runpod-volume
 echo "[sulphur-gguf] /runpod-volume contents:"
 ls -la /runpod-volume/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
-echo "[sulphur-gguf] /runpod-volume/huggingface-cache contents:"
-ls -la /runpod-volume/huggingface-cache/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
-echo "[sulphur-gguf] /runpod-volume/huggingface-cache/hub contents:"
-ls -la "$HF_CACHE"/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
 
-# Find the snapshot directory (hash-named subfolder)
-SNAPSHOT_DIR="$HF_CACHE/$REPO/snapshots"
-if [ ! -d "$SNAPSHOT_DIR" ]; then
-    echo "[sulphur-gguf] WARNING: HF cache not found at $SNAPSHOT_DIR"
-    echo "[sulphur-gguf] RunPod Model Cache not configured? Continuing without models."
+# Check for the HF cache repo directory
+REPO_DIR="$HF_CACHE/$REPO"
+echo "[sulphur-gguf] $REPO_DIR contents:"
+ls -la "$REPO_DIR/" 2>/dev/null || echo "[sulphur-gguf]   (not found)"
+
+# Show refs (git references — which commit is cached)
+if [ -d "$REPO_DIR/refs" ]; then
+    echo "[sulphur-gguf] refs:"
+    cat "$REPO_DIR/refs/"* 2>/dev/null || echo "[sulphur-gguf]   (empty)"
+fi
+
+# Show snapshots
+SNAPSHOT_DIR="$REPO_DIR/snapshots"
+if [ -d "$SNAPSHOT_DIR" ]; then
+    echo "[sulphur-gguf] snapshots:"
+    ls -la "$SNAPSHOT_DIR/" 2>/dev/null
+else
+    echo "[sulphur-gguf] WARNING: no snapshots at $SNAPSHOT_DIR"
+    echo "[sulphur-gguf] RunPod Model Cache not configured or still downloading?"
     MISSING=1
 fi
 
+# Find the snapshot directory (hash-named subfolder)
 if [ "$MISSING" -eq 0 ]; then
     SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
     if [ -z "$SNAP" ]; then
-        echo "[sulphur-gguf] WARNING: no snapshot found in $SNAPSHOT_DIR"
-        echo "[sulphur-gguf] Continuing without models."
+        echo "[sulphur-gguf] WARNING: no snapshot hash dirs in $SNAPSHOT_DIR"
         MISSING=1
     else
         SNAP="${SNAP%/}"
         echo "[sulphur-gguf] Cache snapshot: $SNAP"
+        echo "[sulphur-gguf] Snapshot files:"
+        ls -la "$SNAP/" 2>/dev/null | head -20
     fi
 fi
 
