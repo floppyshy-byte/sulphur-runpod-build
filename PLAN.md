@@ -114,6 +114,10 @@ Total network volume: ~60 GB
 - `Dockerfile` (old) — replaced by `Dockerfile.comfyui`
 - `sulphur_distil_fp8mixed.safetensors` — monolithic checkpoint (replaced by GGUF + separate components)
 
+## Future Enhancements
+
+- **Prompt enhancer integration** — Add a ComfyUI-LLM node or llama.cpp wrapper to run the `sulphur_prompt_enhancer_model-q8_0.gguf` as a pre-processing step inside ComfyUI, so short prompts are automatically expanded before generation.
+
 ## Build & Deploy Steps
 
 1. Update `Dockerfile.comfyui` with KJNodes
