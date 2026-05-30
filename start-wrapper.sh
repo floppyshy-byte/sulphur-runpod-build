@@ -46,9 +46,22 @@ else
     MISSING=1
 fi
 
-# Find the snapshot directory (hash-named subfolder)
+# Find the snapshot directory following RunPod docs approach:
+# 1. Read refs/main to get the canonical hash
+# 2. Fallback: first snapshot directory
 if [ "$MISSING" -eq 0 ]; then
-    SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
+    SNAP=""
+    if [ -f "$REPO_DIR/refs/main" ]; then
+        HASH=$(cat "$REPO_DIR/refs/main" 2>/dev/null)
+        if [ -n "$HASH" ] && [ -d "$SNAPSHOT_DIR/$HASH" ]; then
+            SNAP="$SNAPSHOT_DIR/$HASH"
+            echo "[sulphur-gguf] Using refs/main: $HASH"
+        fi
+    fi
+    if [ -z "$SNAP" ]; then
+        SNAP=$(ls -d "$SNAPSHOT_DIR"/*/ 2>/dev/null | head -1)
+        [ -n "$SNAP" ] && echo "[sulphur-gguf] Fallback: first snapshot dir"
+    fi
     if [ -z "$SNAP" ]; then
         echo "[sulphur-gguf] WARNING: no snapshot hash dirs in $SNAPSHOT_DIR"
         MISSING=1
