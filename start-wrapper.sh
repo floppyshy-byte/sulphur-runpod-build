@@ -20,6 +20,14 @@ MISSING=0
 
 echo "[sulphur-gguf] Looking for HuggingFace cache..."
 
+# Diagnostic: show what's mounted at /runpod-volume
+echo "[sulphur-gguf] /runpod-volume contents:"
+ls -la /runpod-volume/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
+echo "[sulphur-gguf] /runpod-volume/huggingface-cache contents:"
+ls -la /runpod-volume/huggingface-cache/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
+echo "[sulphur-gguf] /runpod-volume/huggingface-cache/hub contents:"
+ls -la "$HF_CACHE"/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
+
 # Find the snapshot directory (hash-named subfolder)
 SNAPSHOT_DIR="$HF_CACHE/$REPO/snapshots"
 if [ ! -d "$SNAPSHOT_DIR" ]; then
