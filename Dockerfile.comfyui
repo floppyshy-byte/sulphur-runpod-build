@@ -5,9 +5,12 @@
 # Sulphur-2 GGUF + Gemma text encoder are stored on a RunPod Network Volume.
 #
 # Network volume layout expected at /runpod-volume:
-#   models/unet/sulphur_dev-Q4_K_M.gguf
+#   models/unet/sulphur-2-base-Q4_K_M.gguf
+#   models/loras/Sulphur-2-distill-lora.safetensors
+#   models/vae/ltx_2.3_video_vae.safetensors
+#   models/vae/ltx_2.3_audio_vae.safetensors
 #   models/text_encoders/gemma-3-12b-it/    (HuggingFace model files)
-#   models/vae/ltx_video_vae.safetensors
+#   models/prompt_enhancer/sulphur_prompt_enhancer_model-q8_0.gguf
 # =============================================================================
 
 ARG COMFYUI_VERSION=5.8.5
@@ -27,6 +30,12 @@ RUN git clone https://github.com/city96/ComfyUI-GGUF.git \
 RUN git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git \
     /comfyui/custom_nodes/ComfyUI-LTXVideo \
     && cd /comfyui/custom_nodes/ComfyUI-LTXVideo \
+    && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+
+# KJNodes — LTX-2.3 VAE loader, audio VAE, and utility nodes
+RUN git clone https://github.com/kijai/ComfyUI-KJNodes.git \
+    /comfyui/custom_nodes/ComfyUI-KJNodes \
+    && cd /comfyui/custom_nodes/ComfyUI-KJNodes \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
 # ---------------------------------------------------------------------------

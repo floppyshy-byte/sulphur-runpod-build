@@ -29,6 +29,32 @@ else
     echo "[sulphur-gguf] WARNING: no models/unet on network volume"
 fi
 
+# --- LoRAs ---
+if [ -d "$NV/models/loras" ]; then
+    mkdir -p "$COMFY/models/loras"
+    for f in "$NV/models/loras"/*; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        if [ ! -e "$COMFY/models/loras/$bn" ]; then
+            ln -s "$f" "$COMFY/models/loras/$bn"
+            echo "[sulphur-gguf]   lora: $bn"
+        fi
+    done
+fi
+
+# --- VAE (video + audio) ---
+if [ -d "$NV/models/vae" ]; then
+    mkdir -p "$COMFY/models/vae"
+    for f in "$NV/models/vae"/*; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        if [ ! -e "$COMFY/models/vae/$bn" ]; then
+            ln -s "$f" "$COMFY/models/vae/$bn"
+            echo "[sulphur-gguf]   vae: $bn"
+        fi
+    done
+fi
+
 # --- Text encoders (Gemma 3 12B as HF snapshot) ---
 if [ -d "$NV/models/text_encoders" ]; then
     mkdir -p "$COMFY/models/text_encoders"
@@ -42,19 +68,6 @@ if [ -d "$NV/models/text_encoders" ]; then
     done
 fi
 
-# --- VAE ---
-if [ -d "$NV/models/vae" ]; then
-    mkdir -p "$COMFY/models/vae"
-    for f in "$NV/models/vae"/*; do
-        [ -e "$f" ] || continue
-        bn=$(basename "$f")
-        if [ ! -e "$COMFY/models/vae/$bn" ]; then
-            ln -s "$f" "$COMFY/models/vae/$bn"
-            echo "[sulphur-gguf]   vae: $bn"
-        fi
-    done
-fi
-
 # --- CLIP ---
 if [ -d "$NV/models/clip" ]; then
     mkdir -p "$COMFY/models/clip"
@@ -64,6 +77,19 @@ if [ -d "$NV/models/clip" ]; then
         if [ ! -e "$COMFY/models/clip/$bn" ]; then
             ln -s "$f" "$COMFY/models/clip/$bn"
             echo "[sulphur-gguf]   clip: $bn"
+        fi
+    done
+fi
+
+# --- Prompt enhancer (GGUF, runs on CPU via llama.cpp) ---
+if [ -d "$NV/models/prompt_enhancer" ]; then
+    mkdir -p "$COMFY/models/prompt_enhancer"
+    for f in "$NV/models/prompt_enhancer"/*; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        if [ ! -e "$COMFY/models/prompt_enhancer/$bn" ]; then
+            ln -s "$f" "$COMFY/models/prompt_enhancer/$bn"
+            echo "[sulphur-gguf]   prompt_enhancer: $bn"
         fi
     done
 fi
