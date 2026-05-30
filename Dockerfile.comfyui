@@ -38,6 +38,12 @@ RUN git clone https://github.com/kijai/ComfyUI-KJNodes.git \
     && cd /comfyui/custom_nodes/ComfyUI-KJNodes \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
+# VideoHelperSuite (VHS) — video I/O: combine frames to MP4, load video
+RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git \
+    /comfyui/custom_nodes/ComfyUI-VideoHelperSuite \
+    && cd /comfyui/custom_nodes/ComfyUI-VideoHelperSuite \
+    && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+
 # ---------------------------------------------------------------------------
 # Model symlink setup (runs at container boot, before ComfyUI starts)
 # ---------------------------------------------------------------------------
