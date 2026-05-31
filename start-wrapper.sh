@@ -20,34 +20,14 @@ MISSING=0
 
 echo "[sulphur-gguf] Looking for HuggingFace cache..."
 
+# Diagnostic: show what's mounted at /runpod-volume
+echo "[sulphur-gguf] /runpod-volume contents:"
+ls -la /runpod-volume/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
+
 # Check for the HF cache repo directory
 REPO_DIR="$HF_CACHE/$REPO"
-
-# Wait for the cache to appear (Model Cache downloads in background)
-# Give it up to 5 minutes — 43 GB at ~400 MB/s = ~2 minutes
-MAX_WAIT=300
-WAITED=0
-while [ ! -d "$REPO_DIR/snapshots" ] && [ "$WAITED" -lt "$MAX_WAIT" ]; do
-    if [ "$WAITED" -eq 0 ]; then
-        echo "[sulphur-gguf] Cache not ready yet, waiting for download..."
-    fi
-    sleep 10
-    WAITED=$((WAITED + 10))
-    if [ $((WAITED % 30)) -eq 0 ]; then
-        echo "[sulphur-gguf]   still waiting... (${WAITED}s)"
-    fi
-done
-
-if [ -d "$REPO_DIR/snapshots" ]; then
-    echo "[sulphur-gguf] Cache found after ${WAITED}s"
-else
-    echo "[sulphur-gguf] WARNING: Cache not found after ${WAITED}s"
-    echo "[sulphur-gguf] /runpod-volume contents:"
-    ls -la /runpod-volume/ 2>/dev/null || echo "[sulphur-gguf]   (empty)"
-    echo "[sulphur-gguf] $REPO_DIR contents:"
-    ls -la "$REPO_DIR/" 2>/dev/null || echo "[sulphur-gguf]   (not found)"
-    MISSING=1
-fi
+echo "[sulphur-gguf] $REPO_DIR contents:"
+ls -la "$REPO_DIR/" 2>/dev/null || echo "[sulphur-gguf]   (not found)"
 
 # Show refs (git references — which commit is cached)
 if [ -d "$REPO_DIR/refs" ]; then
