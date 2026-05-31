@@ -14,7 +14,7 @@
 # No set -e — we want to continue even if models are missing (smoke test)
 
 HF_CACHE="/runpod-volume/huggingface-cache/hub"
-REPO="models--Floppyshy--sulphur-2-runpod"
+REPO="models--floppyshy--sulphur-2-runpod"
 COMFY="/comfyui"
 MISSING=0
 
