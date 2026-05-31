@@ -110,21 +110,21 @@
           "name": "text_encoder",
           "type": "STRING",
           "widget": {
-            "value": "gemma_3_12B_it_fp8_scaled.safetensors"
+            "value": "gemma-3-12b-it/gemma_3_12B_it_fp8_scaled.safetensors"
           }
         },
         {
           "name": "ckpt_name",
           "type": "STRING",
           "widget": {
-            "value": "sulphur-2-base-Q4_K_M.gguf"
+            "value": "taeltx2_3.safetensors"
           }
         },
         {
           "name": "device",
           "type": "COMBO",
           "widget": {
-            "value": "main_device"
+            "value": "default"
           }
         }
       ],

@@ -114,6 +114,30 @@ if [ "$MISSING" -eq 0 ]; then
         echo "[sulphur-gguf]   text_encoder: not found (skipped)"
     fi
 
+    # --- Checkpoints (for LTXAVTextEncoderLoader ckpt_name) ---
+    echo "[sulphur-gguf] Symlinking checkpoints..."
+    mkdir -p "$COMFY/models/checkpoints"
+    for f in "$SNAP"/tae*.safetensors "$SNAP"/*connector*.safetensors "$SNAP"/*ltx*.safetensors; do
+        [ -e "$f" ] 2>/dev/null || continue
+        bn=$(basename "$f")
+        # skip VAE and lora files already handled above
+        case "$bn" in
+            *vae*|*lora*|*distill*) continue ;;
+        esac
+        ln -sf "$f" "$COMFY/models/checkpoints/$bn"
+        echo "[sulphur-gguf]   checkpoint: $bn"
+    done
+
+    # --- GGUF folder (for sulphur2-workflow and ComfyUI-GGUF) ---
+    echo "[sulphur-gguf] Symlinking GGUF folder..."
+    mkdir -p "$COMFY/models/gguf"
+    for f in "$SNAP"/*.gguf; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        ln -sf "$f" "$COMFY/models/gguf/$bn"
+        echo "[sulphur-gguf]   gguf: $bn"
+    done
+
     # --- Prompt enhancer (future) ---
     if [ -d "$SNAP/prompt_enhancer" ]; then
         echo "[sulphur-gguf] Symlinking prompt enhancer..."
