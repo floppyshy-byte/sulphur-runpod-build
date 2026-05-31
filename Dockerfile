@@ -48,6 +48,9 @@ RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git \
     && cd /comfyui/custom_nodes/ComfyUI-VideoHelperSuite \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
+# huggingface_hub — used by start-wrapper.sh for runtime model downloads
+RUN pip install --no-cache-dir huggingface-hub
+
 # ---------------------------------------------------------------------------
 # Model symlink setup (runs at container boot, before ComfyUI starts)
 # ---------------------------------------------------------------------------

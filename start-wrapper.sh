@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # Models are cached via RunPod Model Cache from HuggingFace repo
 # "Floppyshy/sulphur-2-runpod". The cache lands at:
-#   /runpod-volume/huggingface-cache/hub/models--Floppyshy--sulphur-2-runpod/
+#   /runpod-volume/huggingface-cache/hub/models--floppyshy--sulphur-2-runpod/
 #
 # We symlink from the HF cache into ComfyUI's expected directories.
 # If the cache is missing (e.g. smoke test without Model Cache), we warn
@@ -114,10 +114,10 @@ if [ "$MISSING" -eq 0 ]; then
         echo "[sulphur-gguf]   text_encoder: not found (skipped)"
     fi
 
-    # --- Checkpoints (for LTXAVTextEncoderLoader ckpt_name) ---
+    # --- Checkpoints ---
     echo "[sulphur-gguf] Symlinking checkpoints..."
     mkdir -p "$COMFY/models/checkpoints"
-    for f in "$SNAP"/tae*.safetensors "$SNAP"/*connector*.safetensors "$SNAP"/*ltx*.safetensors; do
+    for f in "$SNAP"/tae*.safetensors "$SNAP"/*ltx*.safetensors; do
         [ -e "$f" ] 2>/dev/null || continue
         bn=$(basename "$f")
         # skip VAE and lora files already handled above
@@ -128,7 +128,7 @@ if [ "$MISSING" -eq 0 ]; then
         echo "[sulphur-gguf]   checkpoint: $bn"
     done
 
-    # --- GGUF folder (for sulphur2-workflow and ComfyUI-GGUF) ---
+    # --- GGUF folder ---
     echo "[sulphur-gguf] Symlinking GGUF folder..."
     mkdir -p "$COMFY/models/gguf"
     for f in "$SNAP"/*.gguf; do
@@ -138,7 +138,7 @@ if [ "$MISSING" -eq 0 ]; then
         echo "[sulphur-gguf]   gguf: $bn"
     done
 
-    # --- Prompt enhancer (future) ---
+    # --- Prompt enhancer ---
     if [ -d "$SNAP/prompt_enhancer" ]; then
         echo "[sulphur-gguf] Symlinking prompt enhancer..."
         mkdir -p "$COMFY/models/prompt_enhancer"
@@ -150,6 +150,30 @@ if [ "$MISSING" -eq 0 ]; then
         done
     fi
 fi
+
+# --- CLIP folder (for DualCLIPLoader GGUF) ---
+# DualCLIPLoaderGGUF scans models/clip/ for both clip_name1 and clip_name2.
+# We need the Gemma text encoder AND the LTX embeddings connector here.
+echo "[sulphur-gguf] Symlinking CLIP folder..."
+mkdir -p "$COMFY/models/clip"
+
+# Gemma text encoder weights
+if [ -d "$SNAP/text_encoder" ]; then
+    for f in "$SNAP/text_encoder"/*.safetensors; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        ln -sf "$f" "$COMFY/models/clip/$bn"
+        echo "[sulphur-gguf]   clip: $bn"
+    done
+fi
+
+# LTX embeddings connector (for DualCLIPLoaderGGUF clip_name2)
+for f in "$SNAP"/*connector*.safetensors; do
+    [ -e "$f" ] 2>/dev/null || continue
+    bn=$(basename "$f")
+    ln -sf "$f" "$COMFY/models/clip/$bn"
+    echo "[sulphur-gguf]   clip: $bn"
+done
 
 echo "[sulphur-gguf] Done. Handing off to ComfyUI..."
 
