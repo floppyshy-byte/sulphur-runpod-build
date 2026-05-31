@@ -20,14 +20,14 @@ MISSING=0
 
 echo "[sulphur-gguf] Looking for HuggingFace cache..."
 
-# Diagnostic: show what's mounted at /runpod-volume
-echo "[sulphur-gguf] /runpod-volume contents:"
-ls -la /runpod-volume/ 2>/dev/null || echo "[sulphur-gguf]   (empty or missing)"
+# Full diagnostic dump — matches model-cache-test handler output
+echo "[sulphur-gguf] === CACHE DIAGNOSTIC ==="
+echo "[sulphur-gguf] /runpod-volume:"
+ls -laR /runpod-volume/ 2>/dev/null | head -80 || echo "[sulphur-gguf]   (empty or missing)"
+echo "[sulphur-gguf] === END DIAGNOSTIC ==="
 
 # Check for the HF cache repo directory
 REPO_DIR="$HF_CACHE/$REPO"
-echo "[sulphur-gguf] $REPO_DIR contents:"
-ls -la "$REPO_DIR/" 2>/dev/null || echo "[sulphur-gguf]   (not found)"
 
 # Show refs (git references — which commit is cached)
 if [ -d "$REPO_DIR/refs" ]; then
