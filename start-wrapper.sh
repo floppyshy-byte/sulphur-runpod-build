@@ -143,11 +143,13 @@ if [ "$MISSING" -eq 0 ]; then
         echo "[sulphur-gguf] Symlinking prompt enhancer..."
         mkdir -p "$COMFY/models/prompt_enhancer"
         mkdir -p "$COMFY/models/LLM"
+        mkdir -p "$COMFY/models/text_encoders"
         for f in "$SNAP/prompt_enhancer"/*.gguf; do
             [ -e "$f" ] 2>/dev/null || continue
             bn=$(basename "$f")
             ln -sf "$f" "$COMFY/models/prompt_enhancer/$bn"
             ln -sf "$f" "$COMFY/models/LLM/$bn"
+            ln -sf "$f" "$COMFY/models/text_encoders/$bn"
             echo "[sulphur-gguf]   prompt_enhancer: $bn"
         done
     fi
