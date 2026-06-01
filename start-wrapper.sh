@@ -97,7 +97,7 @@ if [ "$MISSING" -eq 0 ]; then
     # --- VAE ---
     echo "[sulphur-gguf] Symlinking VAEs..."
     mkdir -p "$COMFY/models/vae"
-    for f in "$SNAP"/*vae*.safetensors "$SNAP"/vae/*.safetensors; do
+    for f in "$SNAP"/*vae*.safetensors "$SNAP"/vae/*.safetensors "$SNAP"/tae*.safetensors; do
         [ -e "$f" ] 2>/dev/null || continue
         bn=$(basename "$f")
         ln -sf "$f" "$COMFY/models/vae/$bn"
@@ -117,12 +117,12 @@ if [ "$MISSING" -eq 0 ]; then
     # --- Checkpoints ---
     echo "[sulphur-gguf] Symlinking checkpoints..."
     mkdir -p "$COMFY/models/checkpoints"
-    for f in "$SNAP"/tae*.safetensors "$SNAP"/*ltx*.safetensors; do
+    for f in "$SNAP"/*ltx*.safetensors; do
         [ -e "$f" ] 2>/dev/null || continue
         bn=$(basename "$f")
-        # skip VAE and lora files already handled above
+        # skip VAE, TAE, and lora files already handled above
         case "$bn" in
-            *vae*|*lora*|*distill*) continue ;;
+            *vae*|*tae*|*lora*|*distill*) continue ;;
         esac
         ln -sf "$f" "$COMFY/models/checkpoints/$bn"
         echo "[sulphur-gguf]   checkpoint: $bn"
