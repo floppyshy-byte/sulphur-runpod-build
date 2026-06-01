@@ -203,7 +203,7 @@
       "save_metadata": true,
       "trim_to_audio": false
     },
-    "class_type": "VideoCombine",
+    "class_type": "VHS_VideoCombine",
     "_meta": {
       "title": "Save Video (H.264 MP4)"
     }
