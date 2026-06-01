@@ -192,11 +192,20 @@
         "16",
         0
       ],
-      "filename_prefix": "sulphur_output"
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "sulphur_output",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false
     },
-    "class_type": "SaveImage",
+    "class_type": "VideoCombine",
     "_meta": {
-      "title": "Save Output Frames"
+      "title": "Save Video (H.264 MP4)"
     }
   }
 }
