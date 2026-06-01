@@ -48,13 +48,9 @@ RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git \
     && cd /comfyui/custom_nodes/ComfyUI-VideoHelperSuite \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
-# VideoOutputBridge — exposes VHS video files as standard image outputs for RunPod handler
-# Repo is a Python package (video_output_bridge/__init__.py), so we create a root __init__.py
-# that ComfyUI's loader can discover.
-RUN git clone https://github.com/ComfyNodePRs/PR-ComfyUI-VideoOutputBridge-2f67df8b.git \
-    /comfyui/custom_nodes/ComfyUI-VideoOutputBridge \
-    && echo "from .video_output_bridge import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS" \
-    > /comfyui/custom_nodes/ComfyUI-VideoOutputBridge/__init__.py
+# RunpodVideoBridge — custom node that bridges VHS video outputs to standard image
+# outputs so RunPod's handler S3 uploader picks them up.
+COPY custom_nodes/RunpodVideoBridge /comfyui/custom_nodes/RunpodVideoBridge
 
 # huggingface_hub — used by start-wrapper.sh for runtime model downloads
 RUN pip install --no-cache-dir huggingface-hub

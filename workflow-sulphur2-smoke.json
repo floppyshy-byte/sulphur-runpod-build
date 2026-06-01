@@ -210,15 +210,18 @@
   },
   "18": {
     "inputs": {
+      "images": [
+        "16",
+        0
+      ],
       "filenames": [
         "17",
         0
-      ],
-      "label": "sulphur_output"
+      ]
     },
-    "class_type": "VideoOutputBridge",
+    "class_type": "RunpodVideoBridge",
     "_meta": {
-      "title": "Video Output Bridge"
+      "title": "Runpod Video Output Bridge"
     }
   }
 }
