@@ -207,5 +207,18 @@
     "_meta": {
       "title": "Save Video (H.264 MP4)"
     }
+  },
+  "18": {
+    "inputs": {
+      "filenames": [
+        "17",
+        0
+      ],
+      "label": "sulphur_output"
+    },
+    "class_type": "VideoOutputBridge",
+    "_meta": {
+      "title": "Video Output Bridge"
+    }
   }
 }

@@ -48,6 +48,10 @@ RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git \
     && cd /comfyui/custom_nodes/ComfyUI-VideoHelperSuite \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
+# VideoOutputBridge — exposes VHS video files as standard image outputs for RunPod handler
+RUN git clone https://github.com/arthurtravers/ComfyUI-VideoOutputBridge.git \
+    /comfyui/custom_nodes/ComfyUI-VideoOutputBridge
+
 # huggingface_hub — used by start-wrapper.sh for runtime model downloads
 RUN pip install --no-cache-dir huggingface-hub
 
