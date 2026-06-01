@@ -49,15 +49,13 @@ RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
 # ComfyUI-Llama — GGUF text LLM loader for prompt enhancement
-RUN git clone https://github.com/sebagallo/comfyui-sg-llama-cpp.git \
+# Installs CPU-only; avoids CUDA compilation issues and keeps VRAM free for video generation
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev \
+    && git clone https://github.com/sebagallo/comfyui-sg-llama-cpp.git \
     /comfyui/custom_nodes/comfyui-sg-llama-cpp \
     && cd /comfyui/custom_nodes/comfyui-sg-llama-cpp \
-    && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
-
-# llama-cpp-python with CUDA support for prompt enhancer GPU offloading
-RUN apt-get update && apt-get install -y --no-install-recommends cmake build-essential \
-    && CMAKE_ARGS="-DLLAMA_CUDA=on" pip install --no-cache-dir llama-cpp-python \
-    && apt-get purge -y cmake build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+    && pip install --no-cache-dir -r requirements.txt \
+    && rm -rf /var/lib/apt/lists/*
 
 # RunpodVideoBridge — custom node that bridges VHS video outputs to standard image
 # outputs so RunPod's handler S3 uploader picks them up.
