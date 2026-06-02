@@ -2,7 +2,9 @@ import os
 
 
 class RunpodVideoBridge:
-    """Bridge VHS video outputs to standard ComfyUI image outputs for RunPod handler."""
+    """Bridge VHS video outputs to standard ComfyUI image outputs for RunPod handler.
+    Also captures enhanced prompt text and writes it to the output directory so
+    RunPod's file scanner uploads it alongside the video."""
 
     @classmethod
     def INPUT_TYPES(s):
@@ -10,6 +12,9 @@ class RunpodVideoBridge:
             "required": {
                 "images": ("IMAGE",),
                 "filenames": ("VHS_FILENAMES",),
+            },
+            "optional": {
+                "text": ("STRING", {"forceInput": True}),
             }
         }
 
@@ -18,7 +23,7 @@ class RunpodVideoBridge:
     OUTPUT_NODE = True
     CATEGORY = "Utility/Bridges"
 
-    def bridge_output(self, images, filenames):
+    def bridge_output(self, images, filenames, text=None):
         result = []
 
         # Unpack the VideoHelperSuite tuple wrapper safely
@@ -41,6 +46,22 @@ class RunpodVideoBridge:
                         "subfolder": "",
                         "type": "output"
                     })
+
+        # Write enhanced prompt text to output directory so RunPod uploads it
+        if text and isinstance(text, str) and text.strip():
+            output_dir = "/comfyui/output"
+            os.makedirs(output_dir, exist_ok=True)
+            txt_path = os.path.join(output_dir, "enhanced_prompt.txt")
+            try:
+                with open(txt_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                result.append({
+                    "filename": "enhanced_prompt.txt",
+                    "subfolder": "",
+                    "type": "output"
+                })
+            except Exception:
+                pass
 
         # Inject into ComfyUI's UI output map so RunPod handler picks it up
         return {"ui": {"images": result}, "result": (images,)}
