@@ -54,6 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && git clone https://github.com/sebagallo/comfyui-sg-llama-cpp.git \
     /comfyui/custom_nodes/comfyui-sg-llama-cpp \
     && cd /comfyui/custom_nodes/comfyui-sg-llama-cpp \
+    && sed -i 's/present_penalty/presence_penalty/g' nodes.py \
     && pip install --no-cache-dir -r requirements.txt \
     && rm -rf /var/lib/apt/lists/*
 
