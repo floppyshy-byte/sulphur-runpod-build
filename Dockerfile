@@ -18,7 +18,6 @@
 # =============================================================================
 
 ARG COMFYUI_VERSION=5.8.5
-# Test change: verifying RunPod build sensitivity
 FROM runpod/worker-comfyui:${COMFYUI_VERSION}-base
 
 # ---------------------------------------------------------------------------
