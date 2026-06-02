@@ -67,5 +67,34 @@ class RunpodVideoBridge:
         return {"ui": {"images": result}, "result": (images,)}
 
 
-NODE_CLASS_MAPPINGS = {"RunpodVideoBridge": RunpodVideoBridge}
-NODE_DISPLAY_NAME_MAPPINGS = {"RunpodVideoBridge": "Runpod Video Output Bridge"}
+class StripThinkingTags:
+    """Strips thinking/reasoning tags from prompt enhancer output before
+    feeding to CLIPTextEncode. Keeps the upstream custom node unpatched."""
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "text": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "strip"
+    OUTPUT_NODE = False
+    CATEGORY = "Utility/Text"
+
+    def strip(self, text):
+        import re
+        cleaned = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL).strip()
+        return (cleaned,)
+
+
+NODE_CLASS_MAPPINGS = {
+    "RunpodVideoBridge": RunpodVideoBridge,
+    "StripThinkingTags": StripThinkingTags,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "RunpodVideoBridge": "Runpod Video Output Bridge",
+    "StripThinkingTags": "Strip Thinking Tags",
+}
