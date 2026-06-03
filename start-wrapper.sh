@@ -3,8 +3,9 @@
 # Sulphur-2 GGUF — Model symlink wrapper for RunPod Serverless
 # ---------------------------------------------------------------------------
 # Models are cached via RunPod Model Cache from HuggingFace repo
-# "Floppyshy/sulphur-2-runpod". The cache lands at:
-#   /runpod-volume/huggingface-cache/hub/models--floppyshy--sulphur-2-runpod/
+# "Floppyshy/sulphur-2-runpod-q8". The cache lands at:
+#   /runpod-volume/huggingface-cache/hub/models--floppyshy--sulphur-2-runpod-q8/
+# Override via SULPHUR_HF_REPO env var.
 #
 # We symlink from the HF cache into ComfyUI's expected directories.
 # If the cache is missing (e.g. smoke test without Model Cache), we warn
@@ -14,7 +15,7 @@
 # No set -e — we want to continue even if models are missing (smoke test)
 
 HF_CACHE="/runpod-volume/huggingface-cache/hub"
-REPO="models--floppyshy--sulphur-2-runpod"
+REPO="${SULPHUR_HF_REPO:-models--floppyshy--sulphur-2-runpod-q8}"
 COMFY="/comfyui"
 MISSING=0
 

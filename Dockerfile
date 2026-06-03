@@ -2,7 +2,7 @@
 # Sulphur-2 GGUF — RunPod Serverless Worker (ComfyUI)
 # =============================================================================
 # Extends RunPod's official ComfyUI worker with GGUF and LTX-Video support.
-# Models are stored in HuggingFace repo "Floppyshy/sulphur-2-runpod" and
+# Models are stored in HuggingFace repo "Floppyshy/sulphur-2-runpod-q8" and
 # cached to the worker via RunPod Model Cache. start-wrapper.sh symlinks
 # from the HF cache into ComfyUI's expected model directories.
 #
