@@ -86,7 +86,8 @@ class StripThinkingTags:
 
     def strip(self, text):
         import re
-        cleaned = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL).strip()
+        cleaned = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
         return (cleaned,)
 
 
