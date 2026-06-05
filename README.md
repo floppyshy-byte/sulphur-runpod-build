@@ -60,6 +60,5 @@ Customize the prompt by replacing the text widget in node 4 (positive prompt) an
 |------|------|---------|
 | `text_encoder/gemma_3_12B_it_fp8_scaled.safetensors` | 12 GB | Gemma 3 12B text encoder |
 | `ltx-2.3-22b-distilled_embeddings_connectors.safetensors` | ~6 GB | Gemma → LTX projection connector |
-| `tokenizer/` | — | Tokenizer configs |
 
 Both repos should be configured in RunPod Model Cache. `start-wrapper.sh` will symlink files from all cached repos.

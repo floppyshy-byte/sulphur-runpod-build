@@ -13,8 +13,7 @@ HuggingFace Repos (cached via RunPod Model Cache)
 │   └── sulphur_distil_fp8mixed.safetensors           ~29 GB
 └── Floppyshy/sulphur-2-runpod
     ├── text_encoder/gemma_3_12B_it_fp8_scaled.safetensors  ~12 GB
-    ├── ltx-2.3-22b-distilled_embeddings_connectors.safetensors  ~6 GB
-    └── tokenizer/                                      ~4 MB
+    └── ltx-2.3-22b-distilled_embeddings_connectors.safetensors  ~6 GB
 
 RunPod Model Cache →
   /runpod-volume/huggingface-cache/hub/
