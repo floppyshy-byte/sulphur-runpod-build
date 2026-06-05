@@ -160,7 +160,8 @@ process_repo() {
                         ;;
                     *connector*.safetensors)
                         ln -sf "$filepath" "$COMFY/models/clip/$bn" 2>/dev/null
-                        echo "[sulphur]   clip: $bn"
+                        ln -sf "$filepath" "$COMFY/models/text_encoders/$bn" 2>/dev/null
+                        echo "[sulphur]   clip + text_encoders: $bn"
                         ;;
                     *ltx*.safetensors)
                         ln -sf "$filepath" "$COMFY/models/checkpoints/$bn" 2>/dev/null
