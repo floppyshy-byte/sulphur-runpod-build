@@ -32,7 +32,6 @@ Custom nodes installed at build time:
 - `Lightricks/ComfyUI-LTXVideo` — LTX pipeline nodes (scheduler, sampler)
 - `Kijai/ComfyUI-KJNodes` — LTX-2.3 VAE loader, audio VAE support
 - `Kosinkadink/ComfyUI-VideoHelperSuite` — video I/O (VHS)
-- `sebagallo/comfyui-sg-llama-cpp` — prompt enhancer (optional)
 
 `start-wrapper.sh` runs before `start.sh` to symlink models from all HF cache repos into ComfyUI directories.
 

@@ -1,14 +1,14 @@
-# Sulphur-2 ComfyUI GGUF — RunPod Serverless
+# Sulphur-2 ComfyUI FP8 — RunPod Serverless
 
 This runs Sulphur-2 video generation on RunPod Serverless using ComfyUI with
-GGUF-quantized weights. The GGUF format lets us use cheaper GPUs (RTX 4090 24GB
-or L40S 48GB) instead of an A100 80GB.
+the FP8 distilled checkpoint. The monolithic safetensors file includes the
+transformer, VAE, and distilled LoRA weights all in one.
 
 ## Architecture
 
 ```
 RunPod Serverless (stateless container)
-  → ComfyUI + ComfyUI-GGUF + ComfyUI-LTXVideo
+  → ComfyUI + ComfyUI-LTXVideo + ComfyUI-KJNodes
   → Network Volume (/runpod-volume) holds model weights
 ```
 
@@ -20,8 +20,8 @@ persistent Network Volume, symlinked at boot.
 ### 1. Build and push the image
 
 ```bash
-docker build -f Dockerfile.comfyui -t ghcr.io/floppyshy-byte/sulphur-runpod-comfyui:latest .
-docker push ghcr.io/floppyshy-byte/sulphur-runpod-comfyui:latest
+docker build -f Dockerfile -t ghcr.io/floppyshy-byte/sulphur-runpod-fp8:latest .
+docker push ghcr.io/floppyshy-byte/sulphur-runpod-fp8:latest
 ```
 
 ### 2. Populate the Network Volume
@@ -29,27 +29,31 @@ docker push ghcr.io/floppyshy-byte/sulphur-runpod-comfyui:latest
 Spin up a temporary GPU Pod with a Network Volume attached, then:
 
 ```bash
-# Download Sulphur-2 GGUF (Q4_K_M is a good starting point)
-mkdir -p /workspace/models/unet
-wget -P /workspace/models/unet \
-  https://huggingface.co/Abiray/Sulphur-2-base-GGUF/resolve/main/sulphur_dev-Q4_K_M.gguf
+# Download Sulphur-2 FP8 checkpoint
+mkdir -p /workspace/models/checkpoints
+huggingface-cli download Civitai/Sulphur-2-distilled-fp8 \
+  --local-dir /workspace/models/checkpoints \
+  --include "*.safetensors"
 
 # Download Gemma-3-12B text encoder
-mkdir -p /workspace/models/text_encoders/gemma-3-12b-it
-huggingface-cli download unsloth/gemma-3-12b-it \
-  --local-dir /workspace/models/text_encoders/gemma-3-12b-it
+mkdir -p /workspace/models/text_encoders
+huggingface-cli download Floppyshy/sulphur-2-runpod \
+  --local-dir /workspace/models/text_encoders \
+  --include "text_encoder/*"
 
-# Download LTX VAE (from official LTX-Video repo)
-# Place in /workspace/models/vae/
+# Download LTX connector
+huggingface-cli download Floppyshy/sulphur-2-runpod \
+  --local-dir /workspace/models/clip \
+  --include "*connector*.safetensors"
 ```
 
 ### 3. Create the RunPod Serverless Endpoint
 
 - Template: the Docker image from step 1
-- GPU: RTX 4090 (24GB) for Q3/Q4 quants, L40S (48GB) for Q5+
+- GPU: **L40S (48 GB)** — RTX 4090 (24 GB) will OOM
 - Network Volume: attach the volume from step 2
 - Container Disk: 20 GB
-- Execution Timeout: 600 seconds (video generation takes time)
+- Execution Timeout: 600 seconds
 
 ### 4. Call the API
 
@@ -57,16 +61,16 @@ huggingface-cli download unsloth/gemma-3-12b-it \
 {
   "input": {
     "workflow": {
-      "35": {
+      "1": {
         "inputs": {
-          "unet_name": "sulphur_dev-Q4_K_M.gguf"
+          "ckpt_name": "sulphur_distil_fp8mixed.safetensors"
         },
-        "class_type": "UnetLoaderGGUF"
+        "class_type": "CheckpointLoaderSimple"
       },
-      "6": {
+      "4": {
         "inputs": {
           "text": "A cat walking on a sunlit sidewalk",
-          "clip": ["35", 1]
+          "clip": ["3", 0]
         },
         "class_type": "CLIPTextEncode"
       }
@@ -77,17 +81,14 @@ huggingface-cli download unsloth/gemma-3-12b-it \
 
 The handler returns base64-encoded video frames or S3 URLs (if BUCKET_ENDPOINT_URL is configured).
 
-## GPU / Quant Selection
+## GPU Requirements
 
-| Quant | File Size | Min GPU | Cost/hr |
+| Setup | File Size | Min GPU | Cost/hr |
 |---|---|---|---|
-| Q3_K_M | 11.1 GB | RTX 4090 (24 GB) | ~$1.12 |
-| Q4_K_M | 14.3 GB | RTX 4090 (24 GB) | ~$1.12 |
-| Q5_K_M | 16.1 GB | L40S (48 GB) | ~$0.90 |
-| Q6_K | 17.8 GB | L40S (48 GB) | ~$0.90 |
-| Q8_0 | 22.8 GB | L40S (48 GB) | ~$0.90 |
+| FP8 distilled | 29 GB | L40S (48 GB) | ~$0.90 |
 
-Higher quants = better quality, higher quants also need more VRAM for activations.
+The FP8 mixed checkpoint requires ~29 GB of VRAM just for the model weights.
+An RTX 4090 (24 GB) will OOM during inference.
 
 ## Environment Variables
 
@@ -98,13 +99,13 @@ Higher quants = better quality, higher quants also need more VRAM for activation
 | `BUCKET_ENDPOINT_URL` | — | S3 endpoint for storing generated videos |
 | `COMFY_ORG_API_KEY` | — | Comfy.org API key for API nodes |
 
-## Differences from the diffusers approach
+## Differences from the old GGUF approach
 
-| | diffusers (old) | ComfyUI + GGUF (new) |
+| | Old (GGUF) | New (FP8 checkpoint) |
 |---|---|---|
-| Docker image | ~12 GB | ~6 GB |
-| Min GPU | A100 80GB | RTX 4090 24GB |
-| Cost/hr | ~$2.74 | ~$1.12 |
-| Model format | Single safetensors (FP8mixed) | GGUF (quants Q3-Q8) |
-| API payload | Simple {prompt, width, frames} | ComfyUI workflow JSON |
-| Custom code | handler.py + loader.py | Just Dockerfile + start wrapper |
+| Docker image | ~6 GB | ~6 GB |
+| Min GPU | RTX 4090 (24 GB) | L40S (48 GB) |
+| Cost/hr | ~$1.12 | ~$0.90 |
+| Model format | GGUF (Q4_K_M) + LoRA + VAE | Single FP8 safetensors |
+| API payload | ComfyUI workflow JSON | ComfyUI workflow JSON |
+| Custom code | Dockerfile + start wrapper | Dockerfile + start wrapper |

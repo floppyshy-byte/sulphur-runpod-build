@@ -1,4 +1,4 @@
-# Sulphur-2 ComfyUI + GGUF — Architecture & Workflow
+# Sulphur-2 ComfyUI + FP8 — Architecture & Workflow
 
 ## System Architecture
 
@@ -13,24 +13,29 @@ flowchart TB
             B[handler.py<br/>RunPod worker]
             C[start-wrapper.sh<br/>symlink models]
             D[ComfyUI<br/>localhost:8188]
-            E[custom_nodes/<br/>GGUF, LTXVideo,<br/>KJNodes, VHS]
+            E[custom_nodes/<br/>LTXVideo, KJNodes,<br/>VHS]
         end
 
         subgraph Cache["💾 RunPod Model Cache"]
-            F[(HuggingFace Cache<br/>Floppyshy/<br/>sulphur-2-runpod)]
+            F1[(HF Cache<br/>Civitai/Sulphur-2-distilled-fp8)]
+            F2[(HF Cache<br/>Floppyshy/sulphur-2-runpod)]
         end
     end
 
     subgraph HF["🤗 HuggingFace"]
-        G[Floppyshy/<br/>sulphur-2-runpod<br/>~43 GB]
+        G1[Civitai/Sulphur-2-distilled-fp8<br/>~29 GB]
+        G2[Floppyshy/sulphur-2-runpod<br/>~18 GB]
     end
 
     A -->|"POST /run"| B
-    C -->|symlinks| F
+    C -->|symlinks| F1
+    C -->|symlinks| F2
     B -->|"queues workflow"| D
     D --> E
-    D -->|reads models from| F
-    G -->|"cached at deploy"| F
+    D -->|reads models from| F1
+    D -->|reads models from| F2
+    G1 -->|"cached at deploy"| F1
+    G2 -->|"cached at deploy"| F2
     B -->|"returns frames/video"| A
 ```
 
@@ -42,15 +47,16 @@ sequenceDiagram
     participant W as Worker Container
     participant S as start-wrapper.sh
     participant C as ComfyUI
-    participant H as HF Cache
+    participant H1 as HF Cache (Civitai)
+    participant H2 as HF Cache (Floppyshy)
 
     R->>W: Start container
     W->>S: CMD /start-wrapper.sh
-    S->>H: Find snapshot in<br/>models--Floppyshy--sulphur-2-runpod
-    S->>S: Symlink GGUF → models/unet/
-    S->>S: Symlink LoRA → models/loras/
-    S->>S: Symlink VAEs → models/vae/
+    S->>H1: Find snapshot in<br/>models--Civitai--Sulphur-2-distilled-fp8
+    S->>H2: Find snapshot in<br/>models--Floppyshy--sulphur-2-runpod
+    S->>S: Symlink checkpoint → models/checkpoints/
     S->>S: Symlink text_encoder → models/text_encoders/
+    S->>S: Symlink connector → models/clip/
     S->>W: exec /start.sh
     W->>C: Launch ComfyUI (python main.py)
     C->>C: Load custom nodes
@@ -73,10 +79,8 @@ sequenceDiagram
     Comfy-->>Handler: OK
     Handler->>Comfy: Upload images (if i2v)
     Handler->>Comfy: POST /prompt {workflow}
-    Comfy->>GPU: Load GGUF (UnetLoaderGGUF)
-    Comfy->>GPU: Load LoRA (LoraLoader, 0.65)
-    Comfy->>GPU: Load text encoder (Gemma FP8)
-    Comfy->>GPU: Load VAE (LTX23_video_vae_bf16)
+    Comfy->>GPU: Load checkpoint (CheckpointLoaderSimple)
+    Comfy->>GPU: Load text encoder (DualCLIPLoaderGGUF)
     Comfy->>GPU: Encode prompt → condition
     Comfy->>GPU: Sample latents (8 steps, CFG 1.7)
     Comfy->>GPU: Decode latents → frames (VAE Decode)
@@ -95,10 +99,8 @@ flowchart LR
     end
 
     subgraph Loaders["📦 Model Loaders"]
-        GGUF[UnetLoaderGGUF<br/>Q4_K_M.gguf]
-        LORA[LoraLoader<br/>distill loRA<br/>strength: 0.65]
-        TE[Gemma Text Encoder<br/>FP8 scaled]
-        VAE[VAE Loader<br/>LTX23 video VAE]
+        CKPT[CheckpointLoaderSimple<br/>sulphur_distil_fp8mixed.safetensors]
+        TE[Gemma Text Encoder<br/>FP8 scaled + connector]
     end
 
     subgraph Pipeline["⚙️ LTX Pipeline"]
@@ -113,11 +115,10 @@ flowchart LR
 
     P --> ENCODE
     TE --> ENCODE
-    GGUF --> LORA
-    LORA --> SAMPLE
+    CKPT -->|MODEL| SAMPLE
+    CKPT -->|VAE| DECODE
     ENCODE -->|conditioning| SAMPLE
     SAMPLE -->|latents| DECODE
-    VAE --> DECODE
     DECODE --> FRAMES
 ```
 
@@ -125,24 +126,23 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph HFRepo["🤗 Floppyshy/sulphur-2-runpod"]
-        direction LR
-        U[sulphur-2-base-Q4_K_M.gguf<br/>13 GB]
-        L[sulphur_lora_rank_768.safetensors<br/>10 GB]
-        VV[LTX23_video_vae_bf16.safetensors<br/>1.4 GB]
-        AV[LTX23_audio_vae_bf16.safetensors<br/>348 MB]
-        TV[taeltx2_3.safetensors<br/>22 MB]
-        TE[text_encoder/<br/>config + FP8 scaled<br/>12 GB]
+    subgraph HFRepo1["🤗 Civitai/Sulphur-2-distilled-fp8"]
+        C[sulphur_distil_fp8mixed.safetensors<br/>29 GB]
+    end
+
+    subgraph HFRepo2["🤗 Floppyshy/sulphur-2-runpod"]
+        TE[text_encoder/<br/>gemma_3_12B_it_fp8_scaled.safetensors<br/>12 GB]
+        CN[ltx-2.3-22b-distilled_embeddings_connectors.safetensors<br/>~6 GB]
         TK[tokenizer/<br/>10 files]
     end
 
     subgraph ComfyDir["📁 /comfyui/models/"]
         direction LR
-        MU[unet/ → GGUF]
-        ML[loras/ → safetensors]
-        MV[vae/ → safetensors]
+        MC[checkpoints/ → FP8 checkpoint]
         MT[text_encoders/ → Gemma]
+        MCL[clip/ → connector]
     end
 
-    HFRepo -->|"start-wrapper.sh<br/>symlinks"| ComfyDir
+    HFRepo1 -->|"start-wrapper.sh<br/>symlinks"| ComfyDir
+    HFRepo2 -->|"start-wrapper.sh<br/>symlinks"| ComfyDir
 ```
