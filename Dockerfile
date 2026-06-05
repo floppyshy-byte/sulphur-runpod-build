@@ -1,17 +1,19 @@
 # =============================================================================
-# Sulphur-2 FP8 — RunPod Serverless Worker (ComfyUI)
+# Sulphur-2 GGUF — RunPod Serverless Worker (ComfyUI)
 # =============================================================================
-# Extends RunPod's official ComfyUI worker with LTX-Video support.
+# Extends RunPod's official ComfyUI worker with GGUF and LTX-Video support.
 # Models are cached to the worker via RunPod Model Cache from one or more
 # HuggingFace repos. start-wrapper.sh symlinks from the HF cache into
 # ComfyUI's expected model directories.
 #
-# Primary model: Civitai/Sulphur-2-distilled-fp8
-#   sulphur_distil_fp8mixed.safetensors          (~29 GB, transformer+VAE+distill)
-#
-# Additional components (from Floppyshy/sulphur-2-runpod or other sources):
+# HF repo layout (Floppyshy/sulphur-2-runpod):
+#   sulphur-2-base-Q4_K_M.gguf                  (~13 GB)
+#   sulphur_lora_rank_768.safetensors            (~10 GB)
+#   LTX23_video_vae_bf16.safetensors             (~1.4 GB)
+#   LTX23_audio_vae_bf16.safetensors             (~348 MB)
+#   taeltx2_3.safetensors                        (~22 MB)
 #   text_encoder/gemma_3_12B_it_fp8_scaled.safetensors  (~12 GB)
-#   ltx-2.3-22b-distilled_embeddings_connectors.safetensors  (~6 GB)
+#   tokenizer/                                   (configs)
 # =============================================================================
 
 ARG COMFYUI_VERSION=5.8.5
@@ -20,6 +22,12 @@ FROM runpod/worker-comfyui:${COMFYUI_VERSION}-base
 # ---------------------------------------------------------------------------
 # Custom nodes
 # ---------------------------------------------------------------------------
+
+# ComfyUI-GGUF — loads quantized UNet/diffusion models (supports ltxv arch)
+RUN git clone https://github.com/city96/ComfyUI-GGUF.git \
+    /comfyui/custom_nodes/ComfyUI-GGUF \
+    && cd /comfyui/custom_nodes/ComfyUI-GGUF \
+    && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
 # ComfyUI-LTXVideo — LTX video pipeline nodes (scheduler, sampler, VAE loader)
 RUN git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git \
