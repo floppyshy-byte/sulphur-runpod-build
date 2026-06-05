@@ -103,52 +103,52 @@
 
 <pre class="mermaid">
 flowchart TB
-    subgraph Inputs["📥 Inputs"]
-        P["Node 4: Positive Prompt<br/>CLIPTextEncode<br/>e.g. 'a cat walking'"]
-        N["Node 5: Negative Prompt<br/>CLIPTextEncode<br/>'blurry, low quality...'"]
+    subgraph Inputs["Inputs"]
+        P("Node 4: CLIPTextEncode - Positive Prompt")
+        N("Node 5: CLIPTextEncode - Negative Prompt")
     end
 
-    subgraph Loaders["📦 Model Loaders"]
-        U["Node 1: UnetLoaderGGUF<br/>📄 sulphur-2-base-Q4_K_M.gguf<br/>~13 GB | Output: [0] MODEL"]
-        L["Node 2: LoraLoaderModelOnly<br/>📄 sulphur_lora_rank_768.safetensors<br/>~10 GB | Input: model [1,0] | Output: [0] MODEL+LoRA"]
-        C["Node 3: DualCLIPLoaderGGUF<br/>📄 gemma_3_12B_it_fp8_scaled.safetensors<br/>📄 ltx-2.3-22b-distilled_embeddings_connectors.safetensors<br/>~12 GB + ~6 GB | Output: [0] CLIP"]
-        V["Node 15: VAELoader<br/>📄 LTX23_video_vae_bf16.safetensors<br/>~1.4 GB | Output: [0] VAE"]
+    subgraph Loaders["Model Loaders"]
+        U("Node 1: UnetLoaderGGUF - sulphur-2-base-Q4_K_M.gguf (13 GB)")
+        L("Node 2: LoraLoaderModelOnly - sulphur_lora_rank_768.safetensors (10 GB)")
+        C("Node 3: DualCLIPLoaderGGUF - Gemma text encoder + LTX connector")
+        V("Node 15: VAELoader - LTX23_video_vae_bf16.safetensors (1.4 GB)")
     end
 
-    subgraph Pipeline["⚙️ LTX Pipeline"]
-        COND["Node 6: LTXVConditioning<br/>Input: positive [4,0], negative [5,0]<br/>Output: [0] cond, [1] cond"]
-        LAT["Node 7: EmptyLTXVLatentVideo<br/>768×512, 65 frames"]
-        RNG["Node 8: RandomNoise<br/>seed 42"]
-        SCH["Node 9: LTXVScheduler<br/>8 steps, shift 2.72"]
-        SAM["Node 10: KSamplerSelect<br/>euler_ancestral"]
-        CFG["Node 11: CFGGuider<br/>cfg 1.7 | model [2,0]"]
-        SAMP["Node 12: SamplerCustomAdvanced<br/>noise→latents"]
-        DEC["Node 16: VAEDecodeTiled<br/>vae [15,0] | tile 768"]
+    subgraph Pipeline["LTX Pipeline"]
+        COND("Node 6: LTXVConditioning")
+        LAT("Node 7: EmptyLTXVLatentVideo")
+        RNG("Node 8: RandomNoise")
+        SCH("Node 9: LTXVScheduler")
+        SAM("Node 10: KSamplerSelect")
+        CFG("Node 11: CFGGuider")
+        SAMP("Node 12: SamplerCustomAdvanced")
+        DEC("Node 16: VAEDecodeTiled")
     end
 
-    subgraph Out["📤 Output"]
-        VID["Node 17: VHS_VideoCombine<br/>H.264 MP4, 24fps, crf 19"]
-        BRIDGE["Node 18: RunpodVideoBridge<br/>Repacks for RunPod S3 upload"]
+    subgraph Out["Output"]
+        VID("Node 17: VHS_VideoCombine")
+        BRIDGE("Node 18: RunpodVideoBridge")
     end
 
-    C -->|clip| P
-    C -->|clip| N
-    P -->|positive [0]| COND
-    N -->|negative [0]| COND
-    U -->|model [0]| L
-    L -->|model [0]| CFG
-    COND -->|positive [0]| CFG
-    COND -->|negative [1]| CFG
-    CFG -->|guider [0]| SAMP
-    RNG -->|noise [0]| SAMP
-    SAM -->|sampler [0]| SAMP
-    SCH -->|sigmas [0]| SAMP
-    LAT -->|latent [0]| SAMP
-    SAMP -->|samples [0]| DEC
-    V -->|vae [0]| DEC
-    DEC -->|images [0]| VID
-    VID -->|filenames [0]| BRIDGE
-    DEC -->|images [0]| BRIDGE
+    C -- clip --&gt; P
+    C -- clip --&gt; N
+    P -- positive --&gt; COND
+    N -- negative --&gt; COND
+    U -- model --&gt; L
+    L -- model --&gt; CFG
+    COND -- positive --&gt; CFG
+    COND -- negative --&gt; CFG
+    CFG -- guider --&gt; SAMP
+    RNG -- noise --&gt; SAMP
+    SAM -- sampler --&gt; SAMP
+    SCH -- sigmas --&gt; SAMP
+    LAT -- latent --&gt; SAMP
+    SAMP -- samples --&gt; DEC
+    V -- vae --&gt; DEC
+    DEC -- frames --&gt; VID
+    VID -- filenames --&gt; BRIDGE
+    DEC -- frames --&gt; BRIDGE
 </pre>
 
 <!-- ======================================================================== -->
@@ -157,54 +157,54 @@ flowchart TB
 
 <pre class="mermaid">
 flowchart TB
-    subgraph Inputs["📥 Inputs"]
-        P["Node 4: Positive Prompt<br/>CLIPTextEncode"]
-        N["Node 5: Negative Prompt<br/>CLIPTextEncode"]
-        IMG["Node 19: LoadImage<br/>input.png"]
+    subgraph Inputs["Inputs"]
+        P("Node 4: CLIPTextEncode - Positive Prompt")
+        N("Node 5: CLIPTextEncode - Negative Prompt")
+        IMG("Node 19: LoadImage - input.png")
     end
 
-    subgraph Loaders["📦 Model Loaders"]
-        U["Node 1: UnetLoaderGGUF<br/>📄 sulphur-2-base-Q4_K_M.gguf"]
-        L["Node 2: LoraLoaderModelOnly<br/>📄 sulphur_lora_rank_768.safetensors"]
-        C["Node 3: DualCLIPLoaderGGUF<br/>📄 gemma_3_12B_it_fp8_scaled.safetensors<br/>📄 ltx-2.3-22b-distilled_embeddings_connectors.safetensors"]
-        V["Node 15: VAELoader<br/>📄 LTX23_video_vae_bf16.safetensors"]
+    subgraph Loaders["Model Loaders"]
+        U("Node 1: UnetLoaderGGUF - sulphur-2-base-Q4_K_M.gguf")
+        L("Node 2: LoraLoaderModelOnly - sulphur_lora_rank_768.safetensors")
+        C("Node 3: DualCLIPLoaderGGUF - Gemma + LTX connector")
+        V("Node 15: VAELoader - LTX23_video_vae_bf16.safetensors")
     end
 
-    subgraph Pipeline["⚙️ LTX Pipeline"]
-        COND["Node 20: LTXVImgToVideoAdvanced<br/>positive [4,0], negative [5,0]<br/>image [19,0], vae [15,0]<br/>width 768, height 512, length 65<br/>strength 0.9 | Output: [0] cond, [1] cond, [2] latent"]
-        RNG["Node 8: RandomNoise<br/>seed 42"]
-        SCH["Node 9: LTXVScheduler<br/>8 steps"]
-        SAM["Node 10: KSamplerSelect<br/>euler_ancestral"]
-        CFG["Node 11: CFGGuider<br/>model [2,0] | positive [20,0], negative [20,1]"]
-        SAMP["Node 12: SamplerCustomAdvanced<br/>latent_image [20,2]"]
-        DEC["Node 16: VAEDecodeTiled<br/>vae [15,0]"]
+    subgraph Pipeline["LTX Pipeline"]
+        COND("Node 20: LTXVImgToVideoAdvanced")
+        RNG("Node 8: RandomNoise")
+        SCH("Node 9: LTXVScheduler")
+        SAM("Node 10: KSamplerSelect")
+        CFG("Node 11: CFGGuider")
+        SAMP("Node 12: SamplerCustomAdvanced")
+        DEC("Node 16: VAEDecodeTiled")
     end
 
-    subgraph Out["📤 Output"]
-        VID["Node 17: VHS_VideoCombine<br/>H.264 MP4"]
-        BRIDGE["Node 18: RunpodVideoBridge"]
+    subgraph Out["Output"]
+        VID("Node 17: VHS_VideoCombine")
+        BRIDGE("Node 18: RunpodVideoBridge")
     end
 
-    C -->|clip| P
-    C -->|clip| N
-    P -->|positive [0]| COND
-    N -->|negative [0]| COND
-    IMG -->|image [0]| COND
-    V -->|vae [0]| COND
-    U -->|model [0]| L
-    L -->|model [0]| CFG
-    COND -->|positive [0]| CFG
-    COND -->|negative [1]| CFG
-    CFG -->|guider [0]| SAMP
-    RNG -->|noise [0]| SAMP
-    SAM -->|sampler [0]| SAMP
-    SCH -->|sigmas [0]| SAMP
-    COND -->|latent [2]| SAMP
-    SAMP -->|samples [0]| DEC
-    V -->|vae [0]| DEC
-    DEC -->|images [0]| VID
-    VID -->|filenames [0]| BRIDGE
-    DEC -->|images [0]| BRIDGE
+    C -- clip --&gt; P
+    C -- clip --&gt; N
+    P -- positive --&gt; COND
+    N -- negative --&gt; COND
+    IMG -- image --&gt; COND
+    V -- vae --&gt; COND
+    U -- model --&gt; L
+    L -- model --&gt; CFG
+    COND -- positive --&gt; CFG
+    COND -- negative --&gt; CFG
+    CFG -- guider --&gt; SAMP
+    RNG -- noise --&gt; SAMP
+    SAM -- sampler --&gt; SAMP
+    SCH -- sigmas --&gt; SAMP
+    COND -- latent --&gt; SAMP
+    SAMP -- samples --&gt; DEC
+    V -- vae --&gt; DEC
+    DEC -- frames --&gt; VID
+    VID -- filenames --&gt; BRIDGE
+    DEC -- frames --&gt; BRIDGE
 </pre>
 
 <!-- ======================================================================== -->
@@ -383,22 +383,22 @@ flowchart TB
 
 <pre class="mermaid">
 flowchart LR
-    subgraph HF["🤗 HF Cache"]
+    subgraph HF["HF Cache"]
         direction TB
-        GGUF["sulphur-2-base-Q4_K_M.gguf<br/>13 GB"]
-        LORA["sulphur_lora_rank_768.safetensors<br/>10 GB"]
-        VAE["LTX23_video_vae_bf16.safetensors<br/>1.4 GB"]
-        TE1["gemma_3_12B_it_fp8_scaled.safetensors<br/>12 GB"]
-        TE2["ltx-2.3-22b-distilled_embeddings_connectors.safetensors<br/>6 GB"]
+        GGUF("sulphur-2-base-Q4_K_M.gguf 13GB")
+        LORA("sulphur_lora_rank_768.safetensors 10GB")
+        VAE("LTX23_video_vae_bf16.safetensors 1.4GB")
+        TE1("gemma_3_12B_it_fp8_scaled.safetensors 12GB")
+        TE2("ltx-2.3-22b-distilled_embeddings_connectors.safetensors 6GB")
     end
 
-    subgraph DIRS["📁 /comfyui/models/"]
+    subgraph DIRS["/comfyui/models/"]
         direction TB
-        MU["unet/"]
-        ML["loras/"]
-        MV["vae/"]
-        MT["text_encoders/"]
-        MC["clip/"]
+        MU("unet/")
+        ML("loras/")
+        MV("vae/")
+        MT("text_encoders/")
+        MC("clip/")
     end
 
     GGUF --> MU
