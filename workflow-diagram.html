@@ -69,7 +69,6 @@ sequenceDiagram
     S->>S: Symlink LoRA to models/loras/
     S->>S: Symlink VAEs to models/vae/
     S->>S: Symlink text_encoder to models/text_encoders/
-    S->>S: Symlink prompt_enhancer to models/prompt_enhancer/
     S->>W: exec /start.sh
     W->>C: Launch ComfyUI (python main.py)
     C->>C: Load custom nodes
@@ -149,7 +148,6 @@ flowchart TB
         TV[taeltx2_3.safetensors - 22 MB]
         TE[text_encoder/ - config + FP8 scaled - 12 GB]
         TK[tokenizer/ - 10 config files]
-        PE[prompt_enhancer/ - Q4_K_M + mmproj - 6 GB]
     end
 
     subgraph ComfyDir["📁 /comfyui/models/"]
@@ -157,7 +155,6 @@ flowchart TB
         ML[loras/]
         MV[vae/]
         MT[text_encoders/]
-        MP[prompt_enhancer/]
     end
 
     HFRepo -->|"start-wrapper.sh symlinks at boot"| ComfyDir

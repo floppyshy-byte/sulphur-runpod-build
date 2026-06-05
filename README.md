@@ -1,28 +1,29 @@
-# Sulphur-2 RunPod Serverless (ComfyUI + GGUF)
+# Sulphur-2 RunPod Serverless (ComfyUI + FP8)
 
 Text-to-video and image-to-video generation using
-[Sulphur-2](https://huggingface.co/SulphurAI/Sulphur-2-base) on RunPod Serverless.
+[Sulphur-2](https://huggingface.co/Civitai/Sulphur-2-distilled-fp8) on RunPod Serverless.
 
 ## Quick Links
 
-- **[HF Model Repo](https://huggingface.co/Floppyshy/sulphur-2-runpod)** — all model files (GGUF, LoRA, VAE, text encoder)
+- **[HF Model Repo (Primary)](https://huggingface.co/Civitai/Sulphur-2-distilled-fp8)** — FP8 checkpoint (transformer + VAE + distill, ~29 GB)
+- **[HF Model Repo (Components)](https://huggingface.co/Floppyshy/sulphur-2-runpod)** — text encoder, connector, tokenizer
 - **[Workflow Diagrams](workflow-diagram.html)** — architecture, cold start, inference flow, node graph
 - **[Deployment Plan](PLAN.md)** — full deployment plan and configuration
 
 ## Architecture
 
-- **Docker image:** ComfyUI + ComfyUI-GGUF + ComfyUI-LTXVideo + KJNodes + VHS
-- **Models:** Stored on HuggingFace, cached to workers via RunPod Model Cache
-- **GPU:** RTX 4090 (24 GB) for Q4_K_M, or L40S (48 GB) for higher quants
-- **Cold start:** ~5-10 seconds (models pre-cached on worker)
+- **Docker image:** ComfyUI + ComfyUI-LTXVideo + KJNodes + VHS
+- **Models:** Stored on HuggingFace, cached to workers via RunPod Model Cache (multi-repo)
+- **GPU:** L40S (48 GB) — RTX 4090 (24 GB) is insufficient for FP8
+- **Cold start:** ~5–10 seconds (models pre-cached on worker)
 
 ## Files
 
 - `Dockerfile` — Docker image
-- `start-wrapper.sh` — symlinks models from HF cache into ComfyUI at boot
+- `start-wrapper.sh` — symlinks models from one or more HF cache repos into ComfyUI dirs
 - `workflow-sulphur2-t2v.json` — ComfyUI workflow for text-to-video
+- `workflow-sulphur2-smoke.json` — lightweight smoke-test workflow
 - `PLAN.md` — full deployment plan
-- `download-models.sh` — script to populate the HF repo
 
 ## API Usage
 
@@ -40,7 +41,6 @@ Customize the prompt by replacing the text widget in node 4 (positive prompt) an
 
 ## Inference Settings
 
-- LoRA strength: 0.65
 - Sampling steps: 6–8
 - CFG: 1.5–2.0
 - Default resolution: 480p (768×512)
@@ -48,13 +48,18 @@ Customize the prompt by replacing the text widget in node 4 (positive prompt) an
 
 ## HF Repo Contents
 
+### Primary: `Civitai/Sulphur-2-distilled-fp8`
+
 | File | Size | Purpose |
 |------|------|---------|
-| `sulphur-2-base-Q4_K_M.gguf` | 13 GB | Quantized diffusion model |
-| `sulphur_lora_rank_768.safetensors` | 10 GB | Distill LoRA |
-| `LTX23_video_vae_bf16.safetensors` | 1.4 GB | Video VAE |
-| `LTX23_audio_vae_bf16.safetensors` | 348 MB | Audio VAE |
-| `taeltx2_3.safetensors` | 22 MB | Tiny upscaler VAE |
-| `text_encoder/` | 12 GB | Gemma-3-12B FP8 scaled |
+| `sulphur_distil_fp8mixed.safetensors` | 29 GB | FP8 checkpoint (transformer + VAE + distilled) |
+
+### Components: `Floppyshy/sulphur-2-runpod`
+
+| File | Size | Purpose |
+|------|------|---------|
+| `text_encoder/gemma_3_12B_it_fp8_scaled.safetensors` | 12 GB | Gemma 3 12B text encoder |
+| `ltx-2.3-22b-distilled_embeddings_connectors.safetensors` | ~6 GB | Gemma → LTX projection connector |
 | `tokenizer/` | — | Tokenizer configs |
-| `prompt_enhancer/` | 6 GB | Prompt enhancer GGUF |
+
+Both repos should be configured in RunPod Model Cache. `start-wrapper.sh` will symlink files from all cached repos.

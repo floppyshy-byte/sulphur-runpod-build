@@ -1,11 +1,11 @@
 {
   "1": {
     "inputs": {
-      "unet_name": "sulphur-2-base-Q4_K_M.gguf"
+      "ckpt_name": "sulphur_distil_fp8mixed.safetensors"
     },
-    "class_type": "UnetLoaderGGUF",
+    "class_type": "CheckpointLoaderSimple",
     "_meta": {
-      "title": "Load Sulphur-2 Q4_K_M GGUF"
+      "title": "Load Sulphur-2 FP8 Checkpoint"
     }
   },
   "3": {
@@ -157,15 +157,6 @@
       "title": "Generate Low Resolution"
     }
   },
-  "15": {
-    "inputs": {
-      "vae_name": "LTX23_video_vae_bf16.safetensors"
-    },
-    "class_type": "VAELoader",
-    "_meta": {
-      "title": "Load LTX-2.3 Video VAE"
-    }
-  },
   "16": {
     "inputs": {
       "samples": [
@@ -173,8 +164,8 @@
         0
       ],
       "vae": [
-        "15",
-        0
+        "1",
+        2
       ],
       "tile_size": 768,
       "temporal_size": 64,

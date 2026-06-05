@@ -1,102 +1,77 @@
-# Sulphur-2 ComfyUI + GGUF — Deployment Plan
+# Sulphur-2 ComfyUI + FP8 — Deployment Plan
 
 ## Architecture
 
 ```
 RunPod Serverless Container (stateless)
-├── ComfyUI + ComfyUI-GGUF + ComfyUI-LTXVideo + KJNodes
+├── ComfyUI + ComfyUI-LTXVideo + KJNodes
 ├── start-wrapper.sh → symlinks models from HF cache into ComfyUI dirs
 └── handler.py → receives ComfyUI workflow JSON, returns video frames
 
-HuggingFace Repo (Floppyshy/sulphur-2-runpod)
-├── sulphur-2-base-Q4_K_M.gguf           ~14 GB
-├── Sulphur-2-distill-lora.safetensors   ~10 GB
-├── LTX23_video_vae_bf16.safetensors        ~1.35 GB
-├── LTX23_audio_vae_bf16.safetensors        ~348 MB
-├── text_encoder/                         ~24 GB (Gemma-3-12B)
-└── tokenizer/                            ~4 MB
+HuggingFace Repos (cached via RunPod Model Cache)
+├── Civitai/Sulphur-2-distilled-fp8
+│   └── sulphur_distil_fp8mixed.safetensors           ~29 GB
+└── Floppyshy/sulphur-2-runpod
+    ├── text_encoder/gemma_3_12B_it_fp8_scaled.safetensors  ~12 GB
+    ├── ltx-2.3-22b-distilled_embeddings_connectors.safetensors  ~6 GB
+    └── tokenizer/                                      ~4 MB
 
 RunPod Model Cache →
   /runpod-volume/huggingface-cache/hub/
+    models--Civitai--Sulphur-2-distilled-fp8/snapshots/<hash>/
     models--Floppyshy--sulphur-2-runpod/snapshots/<hash>/
 ```
 
-No network volume — everything is in the HF repo, cached to workers via RunPod Model Cache.
+No network volume — everything is in HF repos, cached to workers via RunPod Model Cache.
 
 ## Docker Image
 
 Base: `runpod/worker-comfyui:5.8.5-base`
 
 Custom nodes installed at build time:
-- `city96/ComfyUI-GGUF` — UnetLoaderGGUF, DualCLIPLoaderGGUF
 - `Lightricks/ComfyUI-LTXVideo` — LTX pipeline nodes (scheduler, sampler)
 - `Kijai/ComfyUI-KJNodes` — LTX-2.3 VAE loader, audio VAE support
+- `Kosinkadink/ComfyUI-VideoHelperSuite` — video I/O (VHS)
+- `sebagallo/comfyui-sg-llama-cpp` — prompt enhancer (optional)
 
-`start-wrapper.sh` runs before `start.sh` to symlink models from the HF cache into ComfyUI directories.
+`start-wrapper.sh` runs before `start.sh` to symlink models from all HF cache repos into ComfyUI directories.
 
-## HF Repo Changes
+## RunPod Model Cache Configuration
 
-`Floppyshy/sulphur-2-runpod`:
-- REMOVE: `sulphur_distil_fp8mixed.safetensors` (29 GB, monolithic — not needed for ComfyUI)
-- ADD: `sulphur-2-base-Q4_K_M.gguf` (~14 GB, from Abiray/Sulphur-2-base-GGUF)
-- ADD: `Sulphur-2-distill-lora.safetensors` (~10 GB, from SulphurAI/Sulphur-2-base)
-- ADD: `LTX23_video_vae_bf16.safetensors` (~1.35 GB, from Kijai/LTX2.3_comfy)
-- ADD: `LTX23_audio_vae_bf16.safetensors` (~348 MB, from Kijai/LTX2.3_comfy)
-- KEEP: `text_encoder/` (Gemma-3-12B safetensors)
-- KEEP: `tokenizer/` (tokenizer configs)
+Configure **both** repos in your RunPod endpoint Model Cache settings:
 
-Total: ~50 GB (vs 53 GB before)
+1. `Civitai/Sulphur-2-distilled-fp8` — primary checkpoint
+2. `Floppyshy/sulphur-2-runpod` — text encoder + connector + tokenizer
+
+`start-wrapper.sh` automatically discovers and symlinks from all cached repos.
 
 ## GPU Selection
 
-| Quant | File | Min GPU | Cost/hr | Use case |
+| Setup | File | Min GPU | Cost/hr | Use case |
 |---|---|---|---|---|
-| Q3_K_M | 11 GB | RTX 4090 (24 GB) | ~$1.12 | Fastest, lowest quality |
-| Q4_K_M | 14 GB | RTX 4090 (24 GB) | ~$1.12 | Recommended starting point |
-| Q5_K_M | 16 GB | L40S (48 GB) | ~$0.90 | Better quality |
-| Q8_0 | 23 GB | L40S (48 GB) | ~$0.90 | Near-lossless |
+| FP8 distilled | 29 GB | L40S (48 GB) | ~$0.90 | Full quality, distill baked in |
 
-## Inference Settings (Distilled + Quantized)
+**RTX 4090 (24 GB) is insufficient** for the 29 GB FP8 checkpoint. L40S (48 GB) or A100 (80 GB) required.
 
-- LoRA strength: 0.6–0.7
+## Inference Settings (Distilled FP8)
+
 - Sampling steps: 6–8
 - CFG: 1.5–2.0
 - Resolution: 480p default
+- No separate LoRA — distill is baked into the checkpoint
 
-## What We Don't Need Anymore
+## Workflow Nodes
 
-- `loader.py` — the custom safetensors loader (ComfyUI handles loading)
-- `handler.py` — the custom RunPod handler (ComfyUI base image provides its own)
-- `Dockerfile` (old) — replaced by `Dockerfile.comfyui`
-- `sulphur_distil_fp8mixed.safetensors` — monolithic checkpoint (replaced by GGUF + separate components)
-- Network volume — replaced by HF repo + RunPod Model Cache
-
-## Future Enhancements (Day 2+)
-
-### Video MP4 Output (VHS + VideoOutputBridge)
-- Add `ComfyUI-VideoHelperSuite` node → `VHS_VideoCombine` merges frames into MP4
-- Add `VideoOutputBridge` node → repackages VHS video output into standard `images` payload format so RunPod's handler picks it up without modification
-- Result: API returns MP4 video file (or S3 URL) instead of individual frame images
-
-### Prompt Enhancer Integration
-- Add `sulphur_prompt_enhancer-Q4_K_M-imatrix.gguf` (~5.2 GB) and `sulphur_prompt_enhancer-mmproj-BF16.gguf` (~879 MB) to HF repo
-- Add ComfyUI LLM-loader node to run enhancer on CPU as a pre-processing step
-- Alternative: run enhancer as a separate microservice before calling ComfyUI
-
-### Higher Quality Quants
-- Add Q5_K_M (16 GB) or Q8_0 (23 GB) GGUF files to HF repo for quality-sensitive jobs
-- Requires GPU upgrade: L40S (48 GB) at ~$0.90/hr
-- Simple filename swap in the workflow JSON — no code changes
-
-### Audio Generation
-- Add LTX-2.3 audio VAE loader and vocoder nodes (VAE file already in repo)
-- Enable native sync audio with video output
-- Requires KJNodes audio pipeline nodes (already installed)
+| Node | File | class_type | Output Used |
+|---|---|---|---|
+| Checkpoint | `sulphur_distil_fp8mixed.safetensors` | `CheckpointLoaderSimple` | `[0]` MODEL, `[2]` VAE |
+| Text Encoder | `gemma_3_12B_it_fp8_scaled.safetensors` | `DualCLIPLoaderGGUF` | `[0]` CLIP |
+| Connector | `ltx-2.3-22b-distilled_embeddings_connectors.safetensors` | `DualCLIPLoaderGGUF` | `[0]` CLIP |
 
 ## Build & Deploy Steps
 
-1. Download model files to HF repo (or upload via huggingface-cli)
-2. Build and push Docker image (RunPod native build pointing at Dockerfile.comfyui)
-3. Create RunPod serverless endpoint (RTX 4090, Model Cache: Floppyshy/sulphur-2-runpod)
+1. Build and push Docker image (RunPod native build pointing at Dockerfile)
+2. Configure RunPod Model Cache with both HF repos
+3. Create RunPod serverless endpoint (L40S 48 GB)
 4. Write and test ComfyUI workflow JSON
 5. Submit test job, verify video output

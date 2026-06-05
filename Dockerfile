@@ -1,20 +1,17 @@
 # =============================================================================
-# Sulphur-2 GGUF — RunPod Serverless Worker (ComfyUI)
+# Sulphur-2 FP8 — RunPod Serverless Worker (ComfyUI)
 # =============================================================================
-# Extends RunPod's official ComfyUI worker with GGUF and LTX-Video support.
-# Models are stored in HuggingFace repo "Floppyshy/sulphur-2-runpod-q8" and
-# cached to the worker via RunPod Model Cache. start-wrapper.sh symlinks
-# from the HF cache into ComfyUI's expected model directories.
+# Extends RunPod's official ComfyUI worker with LTX-Video support.
+# Models are cached to the worker via RunPod Model Cache from one or more
+# HuggingFace repos. start-wrapper.sh symlinks from the HF cache into
+# ComfyUI's expected model directories.
 #
-# HF repo layout (Floppyshy/sulphur-2-runpod):
-#   sulphur-2-base-Q4_K_M.gguf                  (~13 GB)
-#   sulphur_lora_rank_768.safetensors            (~10 GB)
-#   LTX23_video_vae_bf16.safetensors             (~1.4 GB)
-#   LTX23_audio_vae_bf16.safetensors             (~348 MB)
-#   taeltx2_3.safetensors                        (~22 MB)
+# Primary model: Civitai/Sulphur-2-distilled-fp8
+#   sulphur_distil_fp8mixed.safetensors          (~29 GB, transformer+VAE+distill)
+#
+# Additional components (from Floppyshy/sulphur-2-runpod or other sources):
 #   text_encoder/gemma_3_12B_it_fp8_scaled.safetensors  (~12 GB)
-#   tokenizer/                                   (configs)
-#   prompt_enhancer/                             (~6 GB, Q4_K_M GGUF)
+#   ltx-2.3-22b-distilled_embeddings_connectors.safetensors  (~6 GB)
 # =============================================================================
 
 ARG COMFYUI_VERSION=5.8.5
@@ -23,12 +20,6 @@ FROM runpod/worker-comfyui:${COMFYUI_VERSION}-base
 # ---------------------------------------------------------------------------
 # Custom nodes
 # ---------------------------------------------------------------------------
-
-# ComfyUI-GGUF — loads quantized UNet/diffusion models (supports ltxv arch)
-RUN git clone https://github.com/city96/ComfyUI-GGUF.git \
-    /comfyui/custom_nodes/ComfyUI-GGUF \
-    && cd /comfyui/custom_nodes/ComfyUI-GGUF \
-    && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
 # ComfyUI-LTXVideo — LTX video pipeline nodes (scheduler, sampler, VAE loader)
 RUN git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git \
@@ -61,9 +52,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 # RunpodVideoBridge — custom node that bridges VHS video outputs to standard image
 # outputs so RunPod's handler S3 uploader picks them up.
 COPY custom_nodes/RunpodVideoBridge /comfyui/custom_nodes/RunpodVideoBridge
-
-# huggingface_hub — used by start-wrapper.sh for runtime model downloads
-RUN pip install --no-cache-dir huggingface-hub
 
 # ---------------------------------------------------------------------------
 # Model symlink setup (runs at container boot, before ComfyUI starts)
