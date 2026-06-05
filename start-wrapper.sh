@@ -150,6 +150,11 @@ process_repo() {
                         ln -sf "$filepath" "$COMFY/models/gguf/$bn" 2>/dev/null
                         echo "[sulphur]   unet + gguf: $bn"
                         ;;
+                    *connector*.safetensors)
+                        ln -sf "$filepath" "$COMFY/models/clip/$bn" 2>/dev/null
+                        ln -sf "$filepath" "$COMFY/models/text_encoders/$bn" 2>/dev/null
+                        echo "[sulphur]   clip + text_encoders: $bn"
+                        ;;
                     *lora*.safetensors|*distill*.safetensors)
                         ln -sf "$filepath" "$COMFY/models/loras/$bn" 2>/dev/null
                         echo "[sulphur]   lora: $bn"
@@ -157,11 +162,6 @@ process_repo() {
                     *vae*.safetensors|tae*.safetensors)
                         ln -sf "$filepath" "$COMFY/models/vae/$bn" 2>/dev/null
                         echo "[sulphur]   vae: $bn"
-                        ;;
-                    *connector*.safetensors)
-                        ln -sf "$filepath" "$COMFY/models/clip/$bn" 2>/dev/null
-                        ln -sf "$filepath" "$COMFY/models/text_encoders/$bn" 2>/dev/null
-                        echo "[sulphur]   clip + text_encoders: $bn"
                         ;;
                     *ltx*.safetensors)
                         ln -sf "$filepath" "$COMFY/models/checkpoints/$bn" 2>/dev/null
