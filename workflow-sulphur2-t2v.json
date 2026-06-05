@@ -1,11 +1,25 @@
 {
   "1": {
     "inputs": {
-      "ckpt_name": "sulphur_distil_fp8mixed.safetensors"
+      "unet_name": "sulphur-2-base-Q4_K_M.gguf"
     },
-    "class_type": "CheckpointLoaderSimple",
+    "class_type": "UnetLoaderGGUF",
     "_meta": {
-      "title": "Load Sulphur-2 FP8 Checkpoint"
+      "title": "Load Sulphur-2 Q4_K_M GGUF"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "lora_name": "sulphur_lora_rank_768.safetensors",
+      "strength_model": 1.0
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load Sulphur Distill LoRA"
     }
   },
   "3": {
@@ -111,7 +125,7 @@
   "11": {
     "inputs": {
       "model": [
-        "1",
+        "2",
         0
       ],
       "positive": [
@@ -157,6 +171,15 @@
       "title": "Generate Low Resolution"
     }
   },
+  "15": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load LTX-2.3 Video VAE"
+    }
+  },
   "16": {
     "inputs": {
       "samples": [
@@ -164,8 +187,8 @@
         0
       ],
       "vae": [
-        "1",
-        2
+        "15",
+        0
       ],
       "tile_size": 768,
       "temporal_size": 64,
