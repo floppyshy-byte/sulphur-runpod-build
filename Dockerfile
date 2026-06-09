@@ -47,6 +47,12 @@ RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git \
     && cd /comfyui/custom_nodes/ComfyUI-VideoHelperSuite \
     && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
 
+# Comfyui_TTP_Toolset — video continuation, first/last/middle frame control
+RUN git clone https://github.com/TTPlanetPig/Comfyui_TTP_Toolset.git \
+    /comfyui/custom_nodes/Comfyui_TTP_Toolset \
+    && cd /comfyui/custom_nodes/Comfyui_TTP_Toolset \
+    && pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+
 # ComfyUI-Llama — GGUF text LLM loader for prompt enhancement
 # Installs CPU-only; avoids CUDA compilation issues and keeps VRAM free for video generation
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev \
