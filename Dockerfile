@@ -68,11 +68,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY custom_nodes/RunpodVideoBridge /comfyui/custom_nodes/RunpodVideoBridge
 
 # ---------------------------------------------------------------------------
+# Custom handler with AES-256-GCM encryption support
+# ---------------------------------------------------------------------------
+
+RUN pip install --no-cache-dir cryptography
+
+COPY handler.py /handler.py
+
+# ---------------------------------------------------------------------------
 # Model symlink setup (runs at container boot, before ComfyUI starts)
 # ---------------------------------------------------------------------------
 
 COPY start-wrapper.sh /start-wrapper.sh
 RUN chmod +x /start-wrapper.sh
 
-# Override the base image CMD to symlink models first, then start normally
-CMD ["/start-wrapper.sh"]
+# Model symlink + custom handler setup.
+# ENTRYPOINT symlinks models then chains to base /start.sh which starts ComfyUI.
+# The custom handler at /handler.py overrides the base RunPod ComfyUI handler.
+ENTRYPOINT ["/start-wrapper.sh"]
