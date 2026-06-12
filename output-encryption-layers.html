@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sulphur-2 — Target Output Handling & Encryption Layers</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #f5f5f5;
+    color: #222;
+    line-height: 1.6;
+  }
+  h1 { color: #e69500; margin-bottom: 8px; }
+  h2 { color: #c77600; border-bottom: 2px solid #e69500; padding-bottom: 6px; margin-top: 40px; }
+  h3 { color: #444; margin-top: 30px; }
+  .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+  .mermaid {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  th, td {
+    border: 1px solid #e0e0e0;
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 13px;
+  }
+  th {
+    background: #e69500;
+    color: #fff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) { background: #fafafa; }
+  code {
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #c77600;
+    font-family: "SF Mono", Monaco, monospace;
+  }
+  .note {
+    background: #fff8e1;
+    border-left: 4px solid #e69500;
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .warn {
+    background: #ffebee;
+    border-left: 4px solid #c62828;
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .codeblock {
+    background: #263238;
+    color: #aed581;
+    padding: 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: "SF Mono", Monaco, monospace;
+    font-size: 12px;
+    margin: 12px 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Sulphur-2 — Target Output Handling & Encryption Layers</h1>
+<p class="subtitle">
+  Target architecture: encryption happens only between Flask and RunPod; the browser sends plaintext.
+</p>
+
+<div class="warn">
+  This page describes the <strong>target</strong> architecture, not the current implementation.
+  Browser-side encryption and the <code>/api/crypto-key</code> endpoint will be removed.
+  The <code>COMFY_ENCRYPTION_KEY</code> secret will live only in server-side environment variables.
+</div>
+
+<h2>1. Multiple <code>OUTPUT_NODE = True</code> nodes</h2>
+
+<p>
+  RunPod's handler reads the full ComfyUI <code>/history/{prompt_id}</code> record.
+  Every node with <code>OUTPUT_NODE = True</code> that produced a <code>ui.images</code> entry has its files collected.
+  They all end up in a single array:
+</p>
+
+<div class="codeblock">
+{
+  "status": "COMPLETED",
+  "output": {
+    "images": [
+      { "filename": "sulphur_output_00001.mp4",  "type": "s3_url", "data": "https://.../video1.mp4?..." },
+      { "filename": "sulphur_output_00002.mp4",  "type": "s3_url", "data": "https://.../video2.mp4?..." },
+      { "filename": "enhanced_prompt.txt",       "type": "base64", "data": "YSBjYXQg..." }
+    ]
+  }
+}
+</div>
+
+<div class="note">
+  In Sulphur-2 workflows, only one output node is intentionally wired: the
+  <code>RunpodVideoBridge</code> node after <code>VHS_VideoCombine</code>.
+  Multiple output nodes work, but the backend's <code>download_job_files()</code>
+  skips <code>.txt</code> files, so extra outputs would need to be consumed elsewhere.
+</div>
+
+<h2>2. Must the output dict use <code>ui.images</code>?</h2>
+
+<p>
+  <strong>Yes, for the standard RunPod handler.</strong>
+  RunPod's handler is specifically coded to look at the ComfyUI convention
+  <code>ui.images</code> (a list of <code>{filename, subfolder, type}</code> dicts).
+  It then resolves each file from <code>/comfyui/output/</code> (or temp/input),
+  uploads to S3/R2 if configured, and returns the array shown above.
+</p>
+
+<table>
+  <tr>
+    <th>Key</th>
+    <th>Recognized by RunPod handler?</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td><code>ui.images</code></td>
+    <td>Yes</td>
+    <td>Standard ComfyUI image/video output; handler uploads &amp; returns it.</td>
+  </tr>
+  <tr>
+    <td><code>ui.urls</code></td>
+    <td>No (standard image)</td>
+    <td>Custom key; standard handler ignores it unless you patch it.</td>
+  </tr>
+  <tr>
+    <td><code>ui.data</code></td>
+    <td>No</td>
+    <td>Not a standard ComfyUI output key.</td>
+  </tr>
+  <tr>
+    <td><code>result</code></td>
+    <td>No</td>
+    <td>Used for ComfyUI node graph data flow, not surfaced to the client.</td>
+  </tr>
+</table>
+
+<div class="codeblock">
+# What RunpodVideoBridge returns to ComfyUI
+{
+  "ui": {
+    "images": [
+      {"filename": "sulphur_output_00001.mp4", "subfolder": "", "type": "output"}
+    ]
+  },
+  "result": (images,)   # passed to downstream nodes if any
+}
+</div>
+
+<h2>3. Target encryption layers</h2>
+
+<p>
+  Encryption is <strong>optional</strong> and controlled by the
+  <code>COMFY_ENCRYPTION_KEY</code> environment variable (64 hex chars = 32 bytes).
+  The wire format is <code>base64(nonce(12 bytes) + ciphertext + GCM tag(16 bytes))</code>.
+</p>
+
+<div class="note">
+  In the target architecture, the browser and Flask live on the same host, so the browser
+  sends plaintext. The key is never exposed over HTTP. Encryption is applied by Flask to the
+  entire RunPod input dict, and decrypted by the RunPod worker handler before ComfyUI runs.
+</div>
+
+<h3>Layer diagram</h3>
+
+<div class="mermaid">
+flowchart TB
+    subgraph Browser["Browser (sulphur-web frontend)"]
+        file["User image file"]
+        b64["base64(image bytes)"]
+        submit["POST /api/submit\n{image: base64, prompt: ...}"]
+    end
+
+    subgraph Flask["Flask backend (sulphur-web + vid-web-base)"]
+        submitRoute["/api/submit"]
+        buildWorkflow["Build ComfyUI workflow\n+ inject params"]
+        encryptInput["crypto.encrypt_string()\nAES-256-GCM, base64(nonce+ciphertext+tag)"]
+        runpodClient["runpod_client.submit_runpod()"]
+        statusRoute["/api/status/&lt;job_id&gt;"]
+        download["job_store.download_job_files()"]
+        decryptOutput["crypto.decrypt_file_bytes() /\ncrypto.decrypt_raw_bytes()\n(if output marked encrypted)"]
+        localFiles[("/app/downloads/&lt;job_id&gt;/")]
+    end
+
+    subgraph RunPod["RunPod Serverless worker"]
+        handler["handler.py (real handler)"]
+        decryptInput["Decrypt input.encrypted"]
+        comfy["ComfyUI"]
+        vhs["VHS_VideoCombine"]
+        bridge["RunpodVideoBridge"]
+        s3[("S3 / R2 bucket")]
+    end
+
+    file --> b64
+    b64 --> submit
+    submit --> submitRoute
+    submitRoute --> buildWorkflow
+    buildWorkflow -->|"crypto enabled"| encryptInput
+    buildWorkflow -->|"crypto disabled"| runpodClient
+    encryptInput -->|"POST /run\n{input: {encrypted: ...}}"| runpodClient
+    runpodClient --> handler
+    handler --> decryptInput
+    decryptInput -->|"{input: {workflow, images}}"| comfy
+    comfy --> vhs
+    vhs -->|"MP4 on disk"| bridge
+    bridge -->|"ui.images"| handler
+    handler -->|"upload if BUCKET_* set"| s3
+    s3 -->|"signed URL\n(output.images[].data)"| statusRoute
+    statusRoute --> download
+    download --> decryptOutput
+    decryptOutput --> localFiles
+</div>
+
+<h3>What exactly is encrypted?</h3>
+
+<table>
+  <tr>
+    <th>Thing</th>
+    <th>Encrypted?</th>
+    <th>Where</th>
+  </tr>
+  <tr>
+    <td>Browser → Flask request body</td>
+    <td>No</td>
+    <td>Browser and Flask are on the same host. HTTPS protects transport from eavesdroppers.</td>
+  </tr>
+  <tr>
+    <td>RunPod input payload</td>
+    <td>Yes (if COMFY_ENCRYPTION_KEY set)</td>
+    <td>Flask serializes the entire <code>input</code> dict and encrypts it before POST to RunPod.</td>
+  </tr>
+  <tr>
+    <td>Workflow JSON + images inside RunPod</td>
+    <td>No (at runtime)</td>
+    <td>The worker handler decrypts before passing to ComfyUI, so ComfyUI sees plaintext.</td>
+  </tr>
+  <tr>
+    <td>Filename (<code>sulphur_output_00001.mp4</code>)</td>
+    <td>No</td>
+    <td>Sent/stored in plaintext in <code>output.images[].filename</code>.</td>
+  </tr>
+  <tr>
+    <td>S3/R2 signed URL</td>
+    <td>No</td>
+    <td>The URL is plaintext; it grants time-limited access to the object.</td>
+  </tr>
+  <tr>
+    <td>File content at rest in S3/R2</td>
+    <td>Maybe</td>
+    <td>Only if the RunPod worker is later patched to encrypt uploads. Standard worker does not.</td>
+  </tr>
+  <tr>
+    <td>File content downloaded from RunPod → Flask</td>
+    <td>Maybe</td>
+    <td><code>download_job_files()</code> decrypts if <code>img.encrypted == true</code> (kept for future use).</td>
+  </tr>
+  <tr>
+    <td>Stored local MP4 on disk</td>
+    <td>No</td>
+    <td>After decryption, files are written to <code>/app/downloads/&lt;job_id&gt;/</code> as plain MP4s.</td>
+  </tr>
+  <tr>
+    <td><code>COMFY_ENCRYPTION_KEY</code> itself</td>
+    <td>Yes (must stay secret)</td>
+    <td>Loaded from env var only. Never sent to browser or logged.</td>
+  </tr>
+</table>
+
+<h2>4. Target output shapes through the pipeline</h2>
+
+<div class="mermaid">
+sequenceDiagram
+    participant Browser as Browser
+    participant Flask as Flask backend
+    participant RunPod as RunPod handler
+    participant Comfy as ComfyUI
+    participant S3 as S3/R2
+    participant Store as Local disk
+
+    Browser->>Flask: POST /api/submit (plaintext prompt + base64 image)
+    Flask->>Flask: Build workflow JSON + images array
+
+    alt COMFY_ENCRYPTION_KEY set
+        Flask->>Flask: encrypted = encrypt(json.dumps({workflow, images}))
+        Flask->>RunPod: POST /run {input: {encrypted: encrypted}}
+        RunPod->>RunPod: decrypt input.encrypted
+    else no key
+        Flask->>RunPod: POST /run {input: {workflow, images}}
+    end
+
+    RunPod->>Comfy: POST /prompt {workflow}
+    Comfy-->>RunPod: ui.images (via /history)
+
+    alt BUCKET_* configured
+        RunPod->>S3: PUT object
+        S3-->>RunPod: object key
+        RunPod->>RunPod: build signed URL
+        RunPod-->>Flask: output.images[] = {filename, type:"s3_url", data:"https://..."}
+    else no bucket
+        RunPod->>RunPod: read file, base64 encode
+        RunPod-->>Flask: output.images[] = {filename, type:"base64", data:"iVBOR..."}
+    end
+
+    Flask->>Flask: job_store.download_job_files()
+    alt type == s3_url
+        Flask->>S3: GET signed URL
+        S3-->>Flask: raw bytes
+    else type == base64
+        Flask->>Flask: decode data URL
+    end
+
+    alt img.encrypted == true && crypto enabled
+        Flask->>Flask: AES-256-GCM decrypt bytes
+    end
+
+    Flask->>Store: write plain MP4 to /app/downloads/<job_id>/
+    Browser->>Flask: GET /api/local-files/<job_id>/<file> (plaintext)
+</div>
+
+<h2>5. Code pointers (target)</h2>
+
+<table>
+  <tr>
+    <th>Layer</th>
+    <th>File</th>
+    <th>Purpose</th>
+  </tr>
+  <tr>
+    <td>Output bridge</td>
+    <td><code>custom_nodes/RunpodVideoBridge/__init__.py</code></td>
+    <td>Converts VHS video output to ComfyUI <code>ui.images</code> format.</td>
+  </tr>
+  <tr>
+    <td>Submit / status</td>
+    <td><code>sulphur-web/app.py</code></td>
+    <td>Builds payload, encrypts input if key set, calls RunPod, persists jobs.</td>
+  </tr>
+  <tr>
+    <td>RunPod client</td>
+    <td><code>vid-web-base/vid_web_base/runpod_client.py</code></td>
+    <td>HTTP wrapper around RunPod API.</td>
+  </tr>
+  <tr>
+    <td>Worker handler</td>
+    <td><code>handler.py</code></td>
+    <td>Decrypts input.encrypted and runs ComfyUI (replacing placeholder).</td>
+  </tr>
+  <tr>
+    <td>Download / decrypt</td>
+    <td><code>vid-web-base/vid_web_base/job_store.py</code> (download_job_files)</td>
+    <td>Downloads results and decrypts if marked encrypted (future use).</td>
+  </tr>
+  <tr>
+    <td>Backend crypto</td>
+    <td><code>vid-web-base/vid_web_base/crypto.py</code></td>
+    <td>AES-256-GCM helpers. Key loaded from env only; no HTTP exposure.</td>
+  </tr>
+  <tr>
+    <td>Frontend upload helper</td>
+    <td><code>vid-web-base/vid_web_base/static/base.js</code> (fileToBase64)</td>
+    <td>Returns plain base64; encryption branch removed.</td>
+  </tr>
+</table>
+
+<h2>6. Bottom line</h2>
+
+<ul>
+  <li>Browser sends plaintext to Flask (same host).</li>
+  <li><code>COMFY_ENCRYPTION_KEY</code> is server-side only; no <code>/api/crypto-key</code> route.</li>
+  <li>Flask encrypts the entire RunPod <code>input</code> dict when the key is set.</li>
+  <li>RunPod worker handler decrypts before ComfyUI execution.</li>
+  <li>RunPod's handler still collects <code>ui.images</code> from all <code>OUTPUT_NODE</code> nodes.</li>
+  <li>Filenames and signed URLs remain plaintext; encryption protects the input payload bytes.</li>
+</ul>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+
+</body>
+</html>

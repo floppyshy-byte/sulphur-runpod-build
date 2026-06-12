@@ -67,6 +67,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 # outputs so RunPod's handler S3 uploader picks them up.
 COPY custom_nodes/RunpodVideoBridge /comfyui/custom_nodes/RunpodVideoBridge
 
+# Install cryptography for the worker handler's input decryption.
+# The base image uses /opt/venv.
+RUN /opt/venv/bin/pip install --no-cache-dir cryptography
+
+# Replace the base worker handler with our wrapper that decrypts encrypted input.
+# The original handler is kept as /handler_base.py so our wrapper can delegate to it.
+RUN mv /handler.py /handler_base.py
+COPY handler.py /handler.py
+
 # ---------------------------------------------------------------------------
 # Model symlink setup (runs at container boot, before ComfyUI starts)
 # ---------------------------------------------------------------------------
