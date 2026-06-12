@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sulphur-2 — Target Output Handling & Encryption Layers</title>
+<title>Sulphur-2 — Output Handling & Encryption Layers</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
   body {
@@ -85,15 +85,18 @@
 </head>
 <body>
 
-<h1>Sulphur-2 — Target Output Handling & Encryption Layers</h1>
+<h1>Sulphur-2 — Output Handling & Encryption Layers</h1>
 <p class="subtitle">
-  Target architecture: encryption happens only between Flask and RunPod; the browser sends plaintext.
+  Implemented architecture: two optional encryption layers between browser, Flask, and RunPod.
 </p>
 
-<div class="warn">
-  This page describes the <strong>target</strong> architecture, not the current implementation.
-  Browser-side encryption and the <code>/api/crypto-key</code> endpoint will be removed.
-  The <code>COMFY_ENCRYPTION_KEY</code> secret will live only in server-side environment variables.
+<div class="note">
+  <strong>Two independent toggles:</strong>
+  <ul>
+    <li><strong>Browser-side per-field encryption</strong> — triggered when the frontend sends <code>"encryption": true</code>. The browser fetches <code>/api/crypto-key</code>, encrypts image/prompt/keyframes with AES-256-GCM, and Flask decrypts them before building the RunPod payload.</li>
+    <li><strong>Server-side full-payload encryption</strong> — triggered whenever <code>COMFY_ENCRYPTION_KEY</code> is configured. Flask serializes the entire <code>input</code> dict and encrypts it as <code>input.encrypted</code>. The RunPod worker handler decrypts it before ComfyUI runs.</li>
+  </ul>
+  Output images are encrypted by the worker whenever either layer is active.
 </div>
 
 <h2>1. Multiple <code>OUTPUT_NODE = True</code> nodes</h2>
@@ -174,19 +177,12 @@
 }
 </div>
 
-<h2>3. Target encryption layers</h2>
+<h2>3. Encryption layers</h2>
 
 <p>
-  Encryption is <strong>optional</strong> and controlled by the
-  <code>COMFY_ENCRYPTION_KEY</code> environment variable (64 hex chars = 32 bytes).
-  The wire format is <code>base64(nonce(12 bytes) + ciphertext + GCM tag(16 bytes))</code>.
+  All AES-256-GCM encryption uses the <code>COMFY_ENCRYPTION_KEY</code> environment variable
+  (64 hex chars = 32 bytes). The wire format is <code>base64(nonce(12 bytes) + ciphertext + GCM tag(16 bytes))</code>.
 </p>
-
-<div class="note">
-  In the target architecture, the browser and Flask live on the same host, so the browser
-  sends plaintext. The key is never exposed over HTTP. Encryption is applied by Flask to the
-  entire RunPod input dict, and decrypted by the RunPod worker handler before ComfyUI runs.
-</div>
 
 <h3>Layer diagram</h3>
 
@@ -195,43 +191,56 @@ flowchart TB
     subgraph Browser["Browser (sulphur-web frontend)"]
         file["User image file"]
         b64["base64(image bytes)"]
-        submit["POST /api/submit\n{image: base64, prompt: ...}"]
+        getKey["GET /api/crypto-key"]
+        encField["crypto.encrypt_string()
+AES-256-GCM"]
+        submitPlain["POST /api/submit\n{image: base64, prompt: ...}"]
+        submitEnc["POST /api/submit\n{encryption: true, image: encrypted...}"]
     end
 
     subgraph Flask["Flask backend (sulphur-web + vid-web-base)"]
         submitRoute["/api/submit"]
+        decryptFields["crypto.decrypt_string()\nimage / keyframes / previous_frame"]
         buildWorkflow["Build ComfyUI workflow\n+ inject params"]
-        encryptInput["crypto.encrypt_string()\nAES-256-GCM, base64(nonce+ciphertext+tag)"]
+        encryptInput["crypto.encrypt_string()\nAES-256-GCM full input"]
         runpodClient["runpod_client.submit_runpod()"]
         statusRoute["/api/status/&lt;job_id&gt;"]
         download["job_store.download_job_files()"]
-        decryptOutput["crypto.decrypt_file_bytes() /\ncrypto.decrypt_raw_bytes()\n(if output marked encrypted)"]
+        decryptOutput["crypto.decrypt_raw_bytes()\n(if output encrypted)"]
         localFiles[("/app/downloads/&lt;job_id&gt;/")]
     end
 
     subgraph RunPod["RunPod Serverless worker"]
-        handler["handler.py (real handler)"]
+        handler["handler.py"]
         decryptInput["Decrypt input.encrypted"]
         comfy["ComfyUI"]
         vhs["VHS_VideoCombine"]
         bridge["RunpodVideoBridge"]
+        encryptOutput["AES-256-GCM encrypt outputs"]
         s3[("S3 / R2 bucket")]
     end
 
     file --> b64
-    b64 --> submit
-    submit --> submitRoute
-    submitRoute --> buildWorkflow
-    buildWorkflow -->|"crypto enabled"| encryptInput
-    buildWorkflow -->|"crypto disabled"| runpodClient
+    b64 --> submitPlain
+    b64 -->|"client opts in"| encField
+    getKey --> encField
+    encField --> submitEnc
+    submitPlain --> submitRoute
+    submitEnc --> submitRoute
+    submitRoute -->|"encryption: true"| decryptFields
+    submitRoute -->|"no client encryption"| buildWorkflow
+    decryptFields --> buildWorkflow
+    buildWorkflow -->|"COMFY_ENCRYPTION_KEY set"| encryptInput
+    buildWorkflow -->|"no server key"| runpodClient
     encryptInput -->|"POST /run\n{input: {encrypted: ...}}"| runpodClient
-    runpodClient --> handler
+    runpodClient -->|"POST /run"| handler
     handler --> decryptInput
     decryptInput -->|"{input: {workflow, images}}"| comfy
     comfy --> vhs
     vhs -->|"MP4 on disk"| bridge
     bridge -->|"ui.images"| handler
-    handler -->|"upload if BUCKET_* set"| s3
+    handler --> encryptOutput
+    encryptOutput -->|"upload if BUCKET_* set"| s3
     s3 -->|"signed URL\n(output.images[].data)"| statusRoute
     statusRoute --> download
     download --> decryptOutput
@@ -244,17 +253,17 @@ flowchart TB
   <tr>
     <th>Thing</th>
     <th>Encrypted?</th>
-    <th>Where</th>
+    <th>Where / When</th>
   </tr>
   <tr>
     <td>Browser → Flask request body</td>
-    <td>No</td>
-    <td>Browser and Flask are on the same host. HTTPS protects transport from eavesdroppers.</td>
+    <td>Optionally</td>
+    <td>Only when the frontend sets <code>encryption: true</code>. Image, prompt/keyframe text, and previous frame are encrypted with AES-256-GCM.</td>
   </tr>
   <tr>
     <td>RunPod input payload</td>
     <td>Yes (if COMFY_ENCRYPTION_KEY set)</td>
-    <td>Flask serializes the entire <code>input</code> dict and encrypts it before POST to RunPod.</td>
+    <td>Flask serializes the entire <code>input</code> dict and encrypts it as <code>input.encrypted</code> before POST to RunPod.</td>
   </tr>
   <tr>
     <td>Workflow JSON + images inside RunPod</td>
@@ -272,14 +281,14 @@ flowchart TB
     <td>The URL is plaintext; it grants time-limited access to the object.</td>
   </tr>
   <tr>
-    <td>File content at rest in S3/R2</td>
-    <td>Maybe</td>
-    <td>Only if the RunPod worker is later patched to encrypt uploads. Standard worker does not.</td>
+    <td>File content returned by RunPod</td>
+    <td>Yes (if encryption active)</td>
+    <td>The worker encrypts each output image/video when <code>input.encryption == true</code> or <code>input.encrypted</code> is present.</td>
   </tr>
   <tr>
     <td>File content downloaded from RunPod → Flask</td>
-    <td>Maybe</td>
-    <td><code>download_job_files()</code> decrypts if <code>img.encrypted == true</code> (kept for future use).</td>
+    <td>Yes, then decrypted</td>
+    <td><code>download_job_files()</code> decrypts bytes when <code>img.encrypted == true</code>.</td>
   </tr>
   <tr>
     <td>Stored local MP4 on disk</td>
@@ -289,11 +298,11 @@ flowchart TB
   <tr>
     <td><code>COMFY_ENCRYPTION_KEY</code> itself</td>
     <td>Yes (must stay secret)</td>
-    <td>Loaded from env var only. Never sent to browser or logged.</td>
+    <td>Loaded from env var only. Exposed to the browser via <code>/api/crypto-key</code> only when browser-side encryption is enabled.</td>
   </tr>
 </table>
 
-<h2>4. Target output shapes through the pipeline</h2>
+<h2>4. Output shapes through the pipeline</h2>
 
 <div class="mermaid">
 sequenceDiagram
@@ -304,15 +313,24 @@ sequenceDiagram
     participant S3 as S3/R2
     participant Store as Local disk
 
-    Browser->>Flask: POST /api/submit (plaintext prompt + base64 image)
+    alt browser-side encryption enabled
+        Browser->>Flask: GET /api/crypto-key
+        Flask-->>Browser: {key: "hex"}
+        Browser->>Browser: AES-256-GCM encrypt image/prompt/keyframes
+        Browser->>Flask: POST /api/submit {encryption: true, image: encrypted...}
+        Flask->>Flask: decrypt per-field with crypto.decrypt_string()
+    else no browser-side encryption
+        Browser->>Flask: POST /api/submit (plaintext prompt + base64 image)
+    end
+
     Flask->>Flask: Build workflow JSON + images array
 
     alt COMFY_ENCRYPTION_KEY set
-        Flask->>Flask: encrypted = encrypt(json.dumps({workflow, images}))
+        Flask->>Flask: encrypted = encrypt(json.dumps({workflow, images, encryption: true}))
         Flask->>RunPod: POST /run {input: {encrypted: encrypted}}
         RunPod->>RunPod: decrypt input.encrypted
-    else no key
-        Flask->>RunPod: POST /run {input: {workflow, images}}
+    else no server key
+        Flask->>RunPod: POST /run {input: {workflow, images, encryption: true}}
     end
 
     RunPod->>Comfy: POST /prompt {workflow}
@@ -322,21 +340,21 @@ sequenceDiagram
         RunPod->>S3: PUT object
         S3-->>RunPod: object key
         RunPod->>RunPod: build signed URL
-        RunPod-->>Flask: output.images[] = {filename, type:"s3_url", data:"https://..."}
+        RunPod-->>Flask: output.images[] = {filename, encrypted: true, type:"s3_url", data:"https://..."}
     else no bucket
-        RunPod->>RunPod: read file, base64 encode
-        RunPod-->>Flask: output.images[] = {filename, type:"base64", data:"iVBOR..."}
+        RunPod->>RunPod: read file, encrypt, base64 encode
+        RunPod-->>Flask: output.images[] = {filename, encrypted: true, type:"base64", data:"iVBOR..."}
     end
 
     Flask->>Flask: job_store.download_job_files()
     alt type == s3_url
         Flask->>S3: GET signed URL
-        S3-->>Flask: raw bytes
+        S3-->>Flask: encrypted raw bytes
     else type == base64
         Flask->>Flask: decode data URL
     end
 
-    alt img.encrypted == true && crypto enabled
+    alt img.encrypted == true
         Flask->>Flask: AES-256-GCM decrypt bytes
     end
 
@@ -344,7 +362,7 @@ sequenceDiagram
     Browser->>Flask: GET /api/local-files/<job_id>/<file> (plaintext)
 </div>
 
-<h2>5. Code pointers (target)</h2>
+<h2>5. Code pointers</h2>
 
 <table>
   <tr>
@@ -358,9 +376,9 @@ sequenceDiagram
     <td>Converts VHS video output to ComfyUI <code>ui.images</code> format.</td>
   </tr>
   <tr>
-    <td>Submit / status</td>
+    <td>Submit / crypto-key</td>
     <td><code>sulphur-web/app.py</code></td>
-    <td>Builds payload, encrypts input if key set, calls RunPod, persists jobs.</td>
+    <td>Builds payload, decrypts browser-encrypted fields, encrypts full RunPod input if key set.</td>
   </tr>
   <tr>
     <td>RunPod client</td>
@@ -370,34 +388,33 @@ sequenceDiagram
   <tr>
     <td>Worker handler</td>
     <td><code>handler.py</code></td>
-    <td>Decrypts input.encrypted and runs ComfyUI (replacing placeholder).</td>
+    <td>Decrypts <code>input.encrypted</code>, runs ComfyUI, encrypts output images when encryption is active.</td>
   </tr>
   <tr>
     <td>Download / decrypt</td>
-    <td><code>vid-web-base/vid_web_base/job_store.py</code> (download_job_files)</td>
-    <td>Downloads results and decrypts if marked encrypted (future use).</td>
+    <td><code>vid-web-base/vid_web_base/job_store.py</code></td>
+    <td>Downloads results and decrypts bytes when <code>img.encrypted == true</code>.</td>
   </tr>
   <tr>
     <td>Backend crypto</td>
     <td><code>vid-web-base/vid_web_base/crypto.py</code></td>
-    <td>AES-256-GCM helpers. Key loaded from env only; no HTTP exposure.</td>
+    <td>AES-256-GCM helpers. Key loaded from env only.</td>
   </tr>
   <tr>
-    <td>Frontend upload helper</td>
-    <td><code>vid-web-base/vid_web_base/static/base.js</code> (fileToBase64)</td>
-    <td>Returns plain base64; encryption branch removed.</td>
+    <td>Frontend crypto</td>
+    <td><code>sulphur-web/static/index.html</code> / base.js</td>
+    <td>Fetches <code>/api/crypto-key</code>, encrypts fields before submit.</td>
   </tr>
 </table>
 
 <h2>6. Bottom line</h2>
 
 <ul>
-  <li>Browser sends plaintext to Flask (same host).</li>
-  <li><code>COMFY_ENCRYPTION_KEY</code> is server-side only; no <code>/api/crypto-key</code> route.</li>
-  <li>Flask encrypts the entire RunPod <code>input</code> dict when the key is set.</li>
-  <li>RunPod worker handler decrypts before ComfyUI execution.</li>
-  <li>RunPod's handler still collects <code>ui.images</code> from all <code>OUTPUT_NODE</code> nodes.</li>
-  <li>Filenames and signed URLs remain plaintext; encryption protects the input payload bytes.</li>
+  <li>Browser-side encryption is optional; when enabled, the browser fetches the key and encrypts image/prompt/keyframes.</li>
+  <li>Server-side full-payload encryption is automatic whenever <code>COMFY_ENCRYPTION_KEY</code> is set.</li>
+  <li>The two layers can be active independently or together; either one causes the worker to encrypt output files.</li>
+  <li>RunPod's handler collects <code>ui.images</code> from all <code>OUTPUT_NODE</code> nodes and returns them.</li>
+  <li>Filenames and signed URLs remain plaintext; encryption protects input payload bytes and output file bytes.</li>
 </ul>
 
 <script>
