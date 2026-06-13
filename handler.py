@@ -52,17 +52,56 @@ def _aes_decrypt(encoded: str) -> bytes:
     return AESGCM(_ENCRYPTION_KEY).decrypt(nonce, ciphertext, None)
 
 
-def _aes_encrypt(plaintext: bytes) -> str:
+def _aes_encrypt_bytes(plaintext: bytes) -> bytes:
+    """Encrypt plaintext bytes and return raw nonce + ciphertext + tag."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     nonce = secrets.token_bytes(12)
     ciphertext = AESGCM(_ENCRYPTION_KEY).encrypt(nonce, plaintext, None)
-    return base64.b64encode(nonce + ciphertext).decode()
+    return nonce + ciphertext
+
+
+def _aes_encrypt(plaintext: bytes) -> str:
+    """Encrypt plaintext bytes and return base64(nonce + ciphertext + tag)."""
+    return base64.b64encode(_aes_encrypt_bytes(plaintext)).decode()
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# S3 / R2 upload
 # ---------------------------------------------------------------------------
+BUCKET_ENDPOINT_URL = os.environ.get("BUCKET_ENDPOINT_URL", "")
+BUCKET_ACCESS_KEY_ID = os.environ.get("BUCKET_ACCESS_KEY_ID", "")
+BUCKET_SECRET_ACCESS_KEY = os.environ.get("BUCKET_SECRET_ACCESS_KEY", "")
+BUCKET_NAME = os.environ.get("BUCKET_NAME", "")
+
+
+def _s3_configured() -> bool:
+    return all(
+        [BUCKET_ENDPOINT_URL, BUCKET_ACCESS_KEY_ID, BUCKET_SECRET_ACCESS_KEY, BUCKET_NAME]
+    )
+
+
+def _get_s3_client():
+    import boto3
+
+    return boto3.client(
+        "s3",
+        endpoint_url=BUCKET_ENDPOINT_URL,
+        aws_access_key_id=BUCKET_ACCESS_KEY_ID,
+        aws_secret_access_key=BUCKET_SECRET_ACCESS_KEY,
+        region_name="auto",
+    )
+
+
+def _upload_to_s3(data: bytes, key: str) -> str:
+    """Upload bytes to S3/R2 and return a presigned URL."""
+    s3 = _get_s3_client()
+    s3.put_object(Bucket=BUCKET_NAME, Key=key, Body=data)
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": BUCKET_NAME, "Key": key},
+        ExpiresIn=7 * 24 * 3600,  # 7 days
+    )
 
 
 def _wait_for_comfyui(timeout: int = 120) -> None:
@@ -145,13 +184,13 @@ def _fetch_output_info(result: dict) -> list:
     return output_images
 
 
-def _fetch_image_b64(filename: str, subfolder: str, folder_type: str) -> str:
-    """Fetch an output image from ComfyUI and return as base64."""
+def _fetch_image_bytes(filename: str, subfolder: str, folder_type: str) -> bytes:
+    """Fetch an output image/video from ComfyUI and return raw bytes."""
     params = urllib.parse.urlencode(
         {"filename": filename, "subfolder": subfolder, "type": folder_type}
     )
     with urllib.request.urlopen(f"{COMFYUI_URL}/view?{params}", timeout=30) as resp:
-        return base64.b64encode(resp.read()).decode()
+        return resp.read()
 
 
 # ---------------------------------------------------------------------------
@@ -222,27 +261,37 @@ def handler(job: dict) -> dict:
     except TimeoutError as exc:
         return {"error": str(exc)}
 
-    # Collect output images, encrypting if enabled
+    # Collect output images, encrypting if enabled and uploading to S3/R2
+    job_id = job.get("id") or str(uuid.uuid4())
     output_images = []
     for img_info in _fetch_output_info(result):
+        filename = img_info["filename"]
         try:
-            b64 = _fetch_image_b64(
-                img_info["filename"],
+            file_bytes = _fetch_image_bytes(
+                filename,
                 img_info.get("subfolder", ""),
                 img_info.get("type", "output"),
             )
         except Exception as exc:
-            return {"error": f"Failed to fetch output {img_info.get('filename')}: {exc}"}
+            return {"error": f"Failed to fetch output {filename}: {exc}"}
 
+        out_item = {"filename": filename}
         if encryption_enabled:
-            enc = _aes_encrypt(b64.encode())
-            output_images.append(
-                {"data": enc, "encrypted": True, "filename": img_info["filename"]}
-            )
+            file_bytes = _aes_encrypt_bytes(file_bytes)
+            out_item["encrypted"] = True
+
+        if _s3_configured():
+            key = f"runpod/sulphur/{job_id}/{filename}"
+            try:
+                out_item["data"] = _upload_to_s3(file_bytes, key)
+            except Exception as exc:
+                return {"error": f"Failed to upload {filename} to S3: {exc}"}
         else:
-            output_images.append(
-                {"data": b64, "filename": img_info["filename"]}
-            )
+            # Inline data URI fallback when S3 is not configured
+            mime = "video/mp4" if filename.endswith(".mp4") else "image/png"
+            out_item["data"] = f"data:{mime};base64," + base64.b64encode(file_bytes).decode()
+
+        output_images.append(out_item)
 
     if not output_images:
         return {"error": "ComfyUI returned no output images"}
