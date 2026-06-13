@@ -28,7 +28,10 @@ import urllib.parse
 import urllib.request
 import uuid
 
+import tempfile
+
 import runpod
+from runpod.serverless.utils import rp_upload
 
 COMFYUI_URL = "http://127.0.0.1:8188"
 
@@ -66,42 +69,24 @@ def _aes_encrypt(plaintext: bytes) -> str:
     return base64.b64encode(_aes_encrypt_bytes(plaintext)).decode()
 
 
-# ---------------------------------------------------------------------------
-# S3 / R2 upload
-# ---------------------------------------------------------------------------
-BUCKET_ENDPOINT_URL = os.environ.get("BUCKET_ENDPOINT_URL", "")
-BUCKET_ACCESS_KEY_ID = os.environ.get("BUCKET_ACCESS_KEY_ID", "")
-BUCKET_SECRET_ACCESS_KEY = os.environ.get("BUCKET_SECRET_ACCESS_KEY", "")
-BUCKET_NAME = os.environ.get("BUCKET_NAME", "")
-
-
 def _s3_configured() -> bool:
-    return all(
-        [BUCKET_ENDPOINT_URL, BUCKET_ACCESS_KEY_ID, BUCKET_SECRET_ACCESS_KEY, BUCKET_NAME]
-    )
+    """Return True if the base image's S3 uploader is configured."""
+    return bool(os.environ.get("BUCKET_ENDPOINT_URL"))
 
 
-def _get_s3_client():
-    import boto3
-
-    return boto3.client(
-        "s3",
-        endpoint_url=BUCKET_ENDPOINT_URL,
-        aws_access_key_id=BUCKET_ACCESS_KEY_ID,
-        aws_secret_access_key=BUCKET_SECRET_ACCESS_KEY,
-        region_name="auto",
-    )
-
-
-def _upload_to_s3(data: bytes, key: str) -> str:
-    """Upload bytes to S3/R2 and return a presigned URL."""
-    s3 = _get_s3_client()
-    s3.put_object(Bucket=BUCKET_NAME, Key=key, Body=data)
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": BUCKET_NAME, "Key": key},
-        ExpiresIn=7 * 24 * 3600,  # 7 days
-    )
+def _upload_to_s3(data: bytes, filename: str, job_id: str) -> str:
+    """Upload bytes via the base image's S3 helper and return the URL."""
+    suffix = os.path.splitext(filename)[1] or ".bin"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        return rp_upload.upload_image(job_id, tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def _wait_for_comfyui(timeout: int = 120) -> None:
@@ -281,15 +266,16 @@ def handler(job: dict) -> dict:
             out_item["encrypted"] = True
 
         if _s3_configured():
-            key = f"runpod/sulphur/{job_id}/{filename}"
             try:
-                out_item["data"] = _upload_to_s3(file_bytes, key)
+                out_item["data"] = _upload_to_s3(file_bytes, filename, job_id)
+                out_item["type"] = "s3_url"
             except Exception as exc:
                 return {"error": f"Failed to upload {filename} to S3: {exc}"}
         else:
             # Inline data URI fallback when S3 is not configured
             mime = "video/mp4" if filename.endswith(".mp4") else "image/png"
             out_item["data"] = f"data:{mime};base64," + base64.b64encode(file_bytes).decode()
+            out_item["type"] = "base64"
 
         output_images.append(out_item)
 

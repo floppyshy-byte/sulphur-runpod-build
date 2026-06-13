@@ -71,7 +71,7 @@ COPY custom_nodes/RunpodVideoBridge /comfyui/custom_nodes/RunpodVideoBridge
 # Custom handler with AES-256-GCM encryption support
 # ---------------------------------------------------------------------------
 
-RUN pip install --no-cache-dir cryptography boto3
+RUN /opt/venv/bin/pip install --no-cache-dir cryptography
 
 COPY handler.py /handler.py
 
